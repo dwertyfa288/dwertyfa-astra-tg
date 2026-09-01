@@ -5,8 +5,6 @@ node_modules/
 dist/
 .env
 .env.*
-deployment.local.json
-
 # Local Telegram authorization (never commit this file)
 telegram-state.json
 telegram-state.json.tmp
