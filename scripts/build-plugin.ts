@@ -32,6 +32,10 @@ async function main(): Promise<void> {
     platform: "node",
     format: "cjs",
     outfile: "dist/index.js",
+    alias: {
+      bufferutil: "./src/empty-module.ts",
+      "utf-8-validate": "./src/empty-module.ts",
+    },
     define: {
       __ASTRA_TELEGRAM_CREDENTIALS_URL__: JSON.stringify(credentialsUrl),
       __ASTRA_TELEGRAM_CREDENTIALS_TOKEN__: JSON.stringify(credentialsToken),
