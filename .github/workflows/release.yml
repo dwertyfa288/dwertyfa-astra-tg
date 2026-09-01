@@ -30,12 +30,13 @@ jobs:
     # in mihailinl/AstraPlugins would otherwise own the build step of every plugin
     # that trusts it — and that build step runs in YOUR repository with the
     # token above. `astra-plugin init-ci` keeps this line current.
-    uses: mihailinl/AstraPlugins/.github/workflows/plugin-release.yml@2bbabbb1f3c7605d29a40a48e891a0bbabd5c07e  # --ref
+    uses: mihailinl/AstraPlugins/.github/workflows/plugin-release.yml@c3f342469d186ef48458992930bf1b7c583c78d4  # plugin-release/v1
     with:
       plugin-dir: .
       # The tag that releases THIS plugin, and nothing else in this repository.
       tag-prefix: "v"
       # Extra apt packages the Linux build needs, e.g. "libasound2-dev pkg-config".
       linux-packages: ""
-    # secrets не наследуем: --strict это запрещает.
-    # Credentials передаются через env vars в build-script.
+    # No `secrets: inherit`, deliberately. This workflow declares no secrets,
+    # so the job that runs your build.rs and your npm lifecycle scripts has
+    # nothing to leak.
