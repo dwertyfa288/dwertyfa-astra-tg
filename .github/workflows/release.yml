@@ -37,4 +37,5 @@ jobs:
       tag-prefix: "v"
       # Extra apt packages the Linux build needs, e.g. "libasound2-dev pkg-config".
       linux-packages: ""
-    secrets: inherit
+    # secrets не наследуем: --strict это запрещает.
+    # Credentials передаются через env vars в build-script.
