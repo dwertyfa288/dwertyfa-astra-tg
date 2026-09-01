@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { build } from "esbuild";
@@ -36,11 +36,18 @@ async function main(): Promise<void> {
       bufferutil: "./src/empty-module.ts",
       "utf-8-validate": "./src/empty-module.ts",
     },
+    legalComments: "none",
     define: {
       __ASTRA_TELEGRAM_CREDENTIALS_URL__: JSON.stringify(credentialsUrl),
       __ASTRA_TELEGRAM_CREDENTIALS_TOKEN__: JSON.stringify(credentialsToken),
     },
   });
+
+  const bundle = await readFile(resolve("dist/index.js"), "utf8");
+  const cleaned = bundle
+    .replace(/\/\*\*[\s\S]*?\*\//g, "")
+    .replace(/No WebSocket implementation found: run on Node\.js 22\+ or a browser, or set PromisedWebSockets\.webSocketImpl \(e\.g\. require\("ws"\)\.WebSocket\)/g, "No WebSocket implementation found");
+  await writeFile(resolve("dist/index.js"), cleaned, "utf8");
 
   process.stdout.write(
     credentialsUrl

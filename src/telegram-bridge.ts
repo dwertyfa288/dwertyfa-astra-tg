@@ -322,9 +322,6 @@ export class TelegramBridge {
     const voiceId = String(voiceIdValue ?? "").trim();
     let item = this.voiceItems.get(voiceId);
     if (!item) {
-      // Astra currently leaves `{voice_id}` untouched in dynamic plugin action
-      // parameters. Falling back to the oldest queued item also keeps commands
-      // created with previous plugin versions working without manual edits.
       item = [...this.voiceItems.values()].sort((left, right) => left.createdAt - right.createdAt)[0];
     }
     if (!item) return "";
@@ -444,8 +441,6 @@ export class TelegramBridge {
       this.captureRequestedUntil = 0;
       await this.processCapturedReply(recent.text, pending);
     } else {
-      // Depending on scheduler order, the command action can arrive a moment
-      // before the speech_recognized event for the same utterance.
       this.captureRequestedUntil = Date.now() + 5_000;
     }
     return "";
@@ -520,7 +515,6 @@ export class TelegramBridge {
       client.removeEventHandler(this.messageHandler, this.messageBuilder);
       await client.disconnect();
     } catch {
-      // The transport may already be gone. There is nothing left to release.
     }
   }
 
@@ -739,10 +733,6 @@ export class TelegramBridge {
   private fireRootTrigger(payload: Record<string, unknown>): Promise<void> {
     const ctx = this.ctx;
     if (!ctx) return Promise.reject(new Error("Astra ещё не подключила контекст плагина"));
-    // Calls coming from Astra's UI carry a short-lived invocation lease, and
-    // Telegram callbacks can inherit the lease from the login request. An
-    // incoming Telegram notification is an independent root event, so fire it
-    // from the async scope created together with the plugin process.
     return this.detachedScope.runInAsyncScope(() => ctx.fireTrigger("telegram_message", payload));
   }
 
@@ -791,7 +781,6 @@ export class TelegramBridge {
     try {
       await chmod(this.statePath, 0o600);
     } catch {
-      // Windows ACLs are inherited from the user's Astra directory.
     }
   }
 
@@ -800,7 +789,6 @@ export class TelegramBridge {
     try {
       await this.ctx.log(level, message);
     } catch {
-      // Logging must never break Telegram processing.
     }
   }
 }
@@ -844,7 +832,6 @@ async function playVoiceOnWindows(data: Buffer, mime: string): Promise<void> {
     try {
       await unlink(voicePath);
     } catch {
-      // Windows Media Foundation may release the file a few milliseconds late.
       setTimeout(() => void unlink(voicePath).catch(() => undefined), 2_000).unref();
     }
   }

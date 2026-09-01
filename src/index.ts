@@ -1,11 +1,3 @@
-/**
- * Telegram for Astra.
- *
- * Telegram is monitored by this process. Astra's own voice is reached through
- * a declared trigger and the built-in Speak action, so the user's active TTS
- * provider remains the single source of speech.
- */
-
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -30,17 +22,11 @@ export const app = plugin({
       label: "Перехватить ответ Telegram",
       fields: [],
       params: s.object({}),
-      // A separate Astra text-phrase command uses this action to consume
-      // “ответь …” before the regular assistant starts an unrelated AI turn.
-      // It pairs the action call with the speech_recognized event and sends the
-      // words after the command word to Telegram.
       run: () => bridge.captureReplyCommand(),
     }),
     play_voice_message: action({
       label: "Проиграть голосовое Telegram",
       fields: [],
-      // Keep voice_id optional for commands created by older plugin versions.
-      // Current versions use the plugin's own FIFO queue and need no field.
       params: s.object({ voice_id: s.string().optional() }),
       run: ({ voice_id }) => bridge.playVoice(voice_id),
     }),
@@ -101,9 +87,6 @@ export const app = plugin({
     subscribe: ["speech_recognized"],
     on: async (eventType, payload) => {
       if (eventType !== "speech_recognized") return;
-      // Keep these two cheap guards here as well as in TelegramBridge: the
-      // permission exposes private transcripts, so irrelevant partials should
-      // travel no farther through the plugin than necessary.
       if (!isFinalSpeech(payload) || !extractSpeechText(payload)) return;
       await bridge.onSpeechRecognized(payload);
     },
