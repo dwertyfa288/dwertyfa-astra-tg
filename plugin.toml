@@ -1,7 +1,7 @@
 [plugin]
 id = "dwertyfa-astra-tg"
 name = "Telegram for Astra"
-version = "0.1.4"
+version = "0.1.5"
 description = "Announce selected Telegram chats with Astra and send voice-dictated replies"
 author = "dwertyfa"
 license = "MIT"
