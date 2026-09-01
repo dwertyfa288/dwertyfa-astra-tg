@@ -1,6 +1,6 @@
-# Telegram for Astra
+# TG for Astra
 
-Telegram for Astra connects a personal Telegram account to Astra. The plugin monitors selected chats, announces new messages with Astra's voice, plays voice messages, and sends replies dictated by the user.
+TG for Astra connects a personal Telegram account to Astra. The plugin monitors selected chats, announces new messages with Astra's voice, plays voice messages, and sends replies dictated by the user.
 
 ## Features
 
