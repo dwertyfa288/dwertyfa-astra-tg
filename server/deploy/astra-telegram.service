@@ -1,0 +1,28 @@
+[Unit]
+Description=Astra Telegram bootstrap and WSS relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=astra-telegram
+Group=astra-telegram
+WorkingDirectory=/opt/astra-telegram-service
+EnvironmentFile=/etc/astra-telegram-service.env
+ExecStart=/usr/bin/node /opt/astra-telegram-service/server.mjs
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

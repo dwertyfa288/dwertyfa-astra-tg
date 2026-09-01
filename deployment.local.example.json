@@ -1,0 +1,4 @@
+{
+  "credentialsUrl": "https://example.com/v1/astra-telegram/bootstrap",
+  "credentialsToken": "replace-with-the-same-long-token-as-on-the-server"
+}

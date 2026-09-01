@@ -1,0 +1,48 @@
+<!doctype html><html lang="ru"><head><script src="http://astra-plugin.localhost/bridge/astra-bridge.js"></script><meta charset="utf-8"><title>Telegram voice player</title><style>:root{color-scheme:normal}html,body{margin:0;background:transparent}body{color-scheme:light dark}</style></head><body><script>
+(() => {
+  const astra = window.astra;
+  let playing = false;
+  let polling = false;
+  let retryDelay = 0;
+  const call = (method, params = {}, timeoutMs = 12000) => new Promise((resolve, reject) => {
+    if (!astra || typeof astra.callBackend !== 'function') return reject(new Error('Astra bridge unavailable'));
+    const timer = setTimeout(() => reject(new Error('Telegram voice backend timeout')), timeoutMs);
+    Promise.resolve().then(() => astra.callBackend(method, params)).then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
+  async function loadVoice(item) {
+    const parts = [];
+    let offset = 0;
+    let done = false;
+    while (!done) {
+      const chunk = await call('voiceChunk', {id:item.id, offset});
+      const binary = atob(chunk.data);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+      parts.push(bytes);
+      offset = chunk.nextOffset;
+      done = chunk.done;
+    }
+    return new Blob(parts, {type:item.mime || 'audio/ogg'});
+  }
+  async function poll() {
+    if (playing || polling || !astra) return;
+    polling = true;
+    try {
+      const next = await call('nextVoice', {waitMs:25000}, 30000);
+      if (!next.item) return;
+      playing = true;
+      const objectUrl = URL.createObjectURL(await loadVoice(next.item));
+      const audio = new Audio(objectUrl);
+      audio.preload = 'auto'; audio.autoplay = true;
+      const done = async (played, error = '') => { URL.revokeObjectURL(objectUrl); try { await call('acknowledgeVoice', {id:next.item.id, played, error}); } catch(_){} playing=false; retryDelay=played?0:2000; };
+      audio.onended = () => done(true); audio.onerror = () => done(false, audio.error?.message || 'формат аудио не поддерживается');
+      try { await audio.play(); } catch (error) { await done(false, error?.message || String(error)); }
+    } catch (_) { retryDelay = 2000; }
+    finally { polling = false; setTimeout(poll, retryDelay); }
+  }
+  poll();
+})();
+</script></body></html>

@@ -1,0 +1,29 @@
+{
+  "name": "dwertyfa-astra-tg",
+  "version": "0.1.0",
+  "description": "Monitor selected Telegram chats, announce messages with Astra, and reply by voice",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsx scripts/build-ui.ts && tsx scripts/build-plugin.ts",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsx src/index.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.10.0",
+    "@grpc/proto-loader": "^0.7.0",
+    "astra-plugin-sdk": "^0.7.0",
+    "ogg-opus-decoder": "^1.7.5",
+    "teleproto": "^1.229.0",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.18.1",
+    "esbuild": "^0.28.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0"
+  }
+}
