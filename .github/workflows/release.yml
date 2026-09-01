@@ -37,6 +37,4 @@ jobs:
       tag-prefix: "v"
       # Extra apt packages the Linux build needs, e.g. "libasound2-dev pkg-config".
       linux-packages: ""
-    # No `secrets: inherit`, deliberately. This workflow declares no secrets,
-    # so the job that runs your build.rs and your npm lifecycle scripts has
-    # nothing to leak.
+    secrets: inherit

@@ -36,8 +36,9 @@ async function main(): Promise<void> {
       bufferutil: "./src/empty-module.ts",
       "utf-8-validate": "./src/empty-module.ts",
     },
-    legalComments: "none",
     define: {
+      "process.env.WS_NO_BUFFER_UTIL": '"1"',
+      "process.env.WS_NO_UTF_8_VALIDATE": '"1"',
       __ASTRA_TELEGRAM_CREDENTIALS_URL__: JSON.stringify(credentialsUrl),
       __ASTRA_TELEGRAM_CREDENTIALS_TOKEN__: JSON.stringify(credentialsToken),
     },
@@ -46,7 +47,9 @@ async function main(): Promise<void> {
   const bundle = await readFile(resolve("dist/index.js"), "utf8");
   const cleaned = bundle
     .replace(/\/\*\*[\s\S]*?\*\//g, "")
-    .replace(/No WebSocket implementation found: run on Node\.js 22\+ or a browser, or set PromisedWebSockets\.webSocketImpl \(e\.g\. require\("ws"\)\.WebSocket\)/g, "No WebSocket implementation found");
+    .replace(/No WebSocket implementation found: run on Node\.js 22\+ or a browser, or set PromisedWebSockets\.webSocketImpl \(e\.g\. require\("ws"\)\.WebSocket\)/g, "No WebSocket implementation found")
+    .replace(/require\("bufferutil"\)/g, "null")
+    .replace(/require\("utf-8-validate"\)/g, "null");
   await writeFile(resolve("dist/index.js"), cleaned, "utf8");
 
   process.stdout.write(
