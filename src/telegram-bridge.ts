@@ -110,7 +110,13 @@ export class TelegramBridge {
   private voiceItems = new Map<string, VoiceItem>();
   private cleanupTimer?: NodeJS.Timeout;
   private readonly detachedScope = new AsyncResource("astra-telegram-detached");
-  private readonly messageHandler = async (event: any) => this.onTelegramMessage(event);
+  private messageQueue: Promise<void> = Promise.resolve();
+  private triggerQueue: Promise<void> = Promise.resolve();
+  private readonly messageHandler = (event: any): Promise<void> => {
+    const task = this.messageQueue.then(() => this.onTelegramMessage(event));
+    this.messageQueue = task.catch(() => undefined);
+    return task;
+  };
   private readonly messageBuilder = new NewMessage({ incoming: true });
 
   constructor(statePath: string) {
@@ -592,7 +598,7 @@ export class TelegramBridge {
         isVoice ? this.state.preferences.voiceTemplate : this.state.preferences.textTemplate,
         values,
       );
-      await this.fireRootTrigger({
+      await this.queueRootTrigger({
         announcement,
         sender,
         chat,
@@ -626,18 +632,16 @@ export class TelegramBridge {
       message: text,
     });
     if (!confirmation) return;
-    try {
-      await this.fireRootTrigger({
-        announcement: confirmation,
-        sender: pending.sender,
-        chat: pending.chat,
-        message: text,
-        kind: "reply_confirmation",
-        voice_id: "",
-      });
-    } catch (error) {
-      await this.log("warn", `Telegram reply was sent, but Astra confirmation failed: ${errorText(error)}`);
-    }
+    void this.queueRootTrigger({
+      announcement: confirmation,
+      sender: pending.sender,
+      chat: pending.chat,
+      message: text,
+      kind: "reply_confirmation",
+      voice_id: "",
+    }).catch((error) => {
+      void this.log("warn", `Telegram reply was sent, but Astra confirmation failed: ${errorText(error)}`);
+    });
   }
 
   private async fetchTelegramCredentials(): Promise<TelegramCredentials> {
@@ -730,10 +734,28 @@ export class TelegramBridge {
     void this.log("warn", `Telegram authorization failed: ${errorText(error)}`);
   }
 
-  private fireRootTrigger(payload: Record<string, unknown>): Promise<void> {
+  private queueRootTrigger(payload: Record<string, unknown>): Promise<void> {
     const ctx = this.ctx;
     if (!ctx) return Promise.reject(new Error("Astra ещё не подключила контекст плагина"));
-    return this.detachedScope.runInAsyncScope(() => ctx.fireTrigger("telegram_message", payload));
+    const task = this.detachedScope.runInAsyncScope(() =>
+      this.triggerQueue.then(async () => {
+        // Fire on the next event-loop turn. In particular, a confirmation queued
+        // by speech_recognized must not call back into Astra before that inbound
+        // event RPC has returned.
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        try {
+          await ctx.fireTrigger("telegram_message", payload);
+        } catch (error) {
+          // Astra may cancel a trigger after accepting it when the user interrupts
+          // speech or a newer command supersedes the current one. Telegram work is
+          // already complete at this point, so this is not a message-processing
+          // failure and must not poison the queue or produce repeated error logs.
+          if (!isGrpcCancelled(error)) throw error;
+        }
+      }),
+    );
+    this.triggerQueue = task.catch(() => undefined);
+    return task;
   }
 
   private cleanupExpired(): void {
@@ -991,4 +1013,11 @@ function friendlyTelegramError(error: unknown): string {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isGrpcCancelled(error: unknown): boolean {
+  if (error && typeof error === "object" && Number((error as { code?: unknown }).code) === 1) {
+    return true;
+  }
+  return /(?:^|\s)(?:1\s+)?CANCELLED(?::|\s)|Call cancelled/i.test(errorText(error));
 }
