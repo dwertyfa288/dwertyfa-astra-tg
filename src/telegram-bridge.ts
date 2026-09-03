@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { AsyncResource } from "node:async_hooks";
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { chmod, rename, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,8 +10,10 @@ import type { PluginContext } from "astra-plugin-sdk";
 import { OggOpusDecoder } from "ogg-opus-decoder";
 import { Api, TelegramClient } from "teleproto";
 import { NewMessage } from "teleproto/events";
+import { Logger, LogLevel } from "teleproto/extensions/Logger";
 import { StringSession } from "teleproto/sessions";
 
+import { parseCommandsBundle } from "./commands-bundle";
 import { telegramDeploymentConfig } from "./deployment-config";
 import {
   applyTemplate,
@@ -109,6 +111,8 @@ export class TelegramBridge {
   private captureRequestedUntil = 0;
   private voiceItems = new Map<string, VoiceItem>();
   private cleanupTimer?: NodeJS.Timeout;
+  private sessionInvalidated = false;
+  private readonly telegramLogSeen = new Map<string, number>();
   private readonly detachedScope = new AsyncResource("astra-telegram-detached");
   private messageQueue: Promise<void> = Promise.resolve();
   private triggerQueue: Promise<void> = Promise.resolve();
@@ -166,11 +170,79 @@ export class TelegramBridge {
         this.authStage === "connected" &&
         this.state.preferences.enabled &&
         this.state.preferences.selectedChatIds.length > 0,
-      preferences: { ...this.state.preferences, selectedChatIds: [...this.state.preferences.selectedChatIds] },
+      preferences: {
+        ...this.state.preferences,
+        selectedChatIds: [...this.state.preferences.selectedChatIds],
+        selectedChatNames: { ...this.state.preferences.selectedChatNames },
+      },
       maxSelectedChats: MAX_SELECTED_CHATS,
       lastActivity: this.lastActivity,
       replyTarget,
     };
+  }
+
+  async monitorAllChats(): Promise<{ chats: ChatInfo[]; preferences: Preferences }> {
+    const chats = await this.listChats();
+    if (!chats.length) throw new Error("Telegram не вернул ни одного чата");
+    const selected = chats.slice(0, MAX_SELECTED_CHATS);
+    const preferences = await this.savePreferences({
+      ...this.state.preferences,
+      enabled: true,
+      selectedChatIds: selected.map((chat) => chat.id),
+      selectedChatNames: Object.fromEntries(selected.map((chat) => [chat.id, chat.title])),
+    });
+    this.lastActivity = chats.length > selected.length
+      ? `Мониторим ${selected.length} чатов из ${chats.length} — достигнут лимит`
+      : `Мониторим все чаты: ${selected.length}`;
+    return { chats, preferences };
+  }
+
+  /**
+   * Persist just the privacy toggle.
+   *
+   * The UI iframe has an opaque origin, so `localStorage` throws there and the
+   * flag cannot live in the page. It is a preference like any other, but it gets
+   * its own call rather than riding on `savePreferences`: the toggle is pressed
+   * while the template fields may hold unsaved edits, and a full save would
+   * write those too.
+   */
+  async setHideIdentity(value: unknown): Promise<PublicState> {
+    this.state.preferences.hideIdentity = value === true;
+    await this.persistState();
+    return this.publicState();
+  }
+
+  /**
+   * Write the ready-made Astra commands out as an importable file.
+   *
+   * A plugin cannot create a command itself. `CommandService.Create` exists, but
+   * it is on the daemon's client-facing surface, reachable only through the SDK's
+   * `DaemonClient` — which the SDK builds only for a plugin declaring the
+   * `client` capability, and that permission is refused outright to any plugin
+   * not installed from the catalogue. Declaring it to write two commands would
+   * also ask the user to consent to this plugin acting as their chat front-end.
+   * So the button prepares the file and Astra's own import does the writing.
+   */
+  async exportCommandsFile(): Promise<{ path: string; names: string[] }> {
+    const bundle = parseCommandsBundle();
+    const target = join(this.commandsDirectory(), "tg-astra-commands.astra");
+    await writeFile(target, bundle.text, { encoding: "utf8", mode: 0o600 });
+    this.lastActivity = `Файл команд готов: ${target}`;
+    await this.log("info", `Prepared Astra command bundle at ${target}`);
+    return { path: target, names: bundle.names };
+  }
+
+  private commandsDirectory(): string {
+    const home = process.env.USERPROFILE || process.env.HOME || "";
+    const candidates = [
+      home ? join(home, "Downloads") : "",
+      home ? join(home, "Desktop") : "",
+      home,
+    ].filter(Boolean);
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) return candidate;
+    }
+    return tmpdir();
   }
 
   async beginLogin(phoneValue: unknown): Promise<PublicState> {
@@ -189,6 +261,7 @@ export class TelegramBridge {
     this.authError = "";
     this.passwordHint = "";
     this.authStage = "sending_code";
+    this.sessionInvalidated = false;
     this.codeInput = undefined;
     this.passwordInput = undefined;
     this.lastActivity = "Подключаемся к Telegram";
@@ -283,9 +356,11 @@ export class TelegramBridge {
     await this.disconnectClient();
     this.state.session = "";
     this.state.preferences.selectedChatIds = [];
+    this.state.preferences.selectedChatNames = {};
     this.accountName = "";
     this.authStage = "logged_out";
     this.authError = "";
+    this.sessionInvalidated = false;
     this.pendingReply = undefined;
     this.awaitingReplyText = false;
     this.recentSpeech = undefined;
@@ -298,7 +373,7 @@ export class TelegramBridge {
 
   async listChats(): Promise<ChatInfo[]> {
     const client = this.requireConnected();
-    const dialogs = await client.getDialogs({ limit: 200 });
+    const dialogs = await this.guardSession(() => client.getDialogs({ limit: MAX_SELECTED_CHATS }));
     return dialogs
       .filter((dialog: any) => Boolean(dialog?.id))
       .map<ChatInfo>((dialog: any) => ({
@@ -321,7 +396,11 @@ export class TelegramBridge {
     this.state.preferences = preferences;
     this.lastActivity = preferences.enabled ? "Настройки мониторинга сохранены" : "Мониторинг приостановлен";
     await this.persistState();
-    return { ...preferences, selectedChatIds: [...preferences.selectedChatIds] };
+    return {
+      ...preferences,
+      selectedChatIds: [...preferences.selectedChatIds],
+      selectedChatNames: { ...preferences.selectedChatNames },
+    };
   }
 
   async playVoice(voiceIdValue: unknown): Promise<string> {
@@ -478,6 +557,11 @@ export class TelegramBridge {
       }
       await this.finishAuthorization(client);
     } catch (error) {
+      const code = sessionInvalidationCode(errorText(error));
+      if (code) {
+        await this.handleInvalidatedSession(code);
+        return;
+      }
       this.authStage = "error";
       this.authError = `Не удалось восстановить Telegram: ${friendlyTelegramError(error)}`;
       this.lastActivity = this.authError;
@@ -505,6 +589,7 @@ export class TelegramBridge {
     this.authStage = "connected";
     this.authError = "";
     this.passwordHint = "";
+    this.sessionInvalidated = false;
     this.codeInput = undefined;
     this.passwordInput = undefined;
     this.lastActivity = `Telegram подключён: ${this.accountName}`;
@@ -531,6 +616,12 @@ export class TelegramBridge {
       credentials.apiHash,
       {
         connectionRetries: 5,
+        // Without this, teleproto writes its own colour-coded lines straight to
+        // stdout, which the daemon captures verbatim as this plugin's log. It is
+        // also the only place some failures surface at all: the update loop
+        // catches its own errors and retries forever, so a session Telegram has
+        // already invalidated is visible here and nowhere else.
+        baseLogger: this.createTelegramLogger(),
         networkSocket: createTelegramTransport({
           relayUrl: credentials.relayUrl,
           accessToken: credentials.accessToken,
@@ -543,6 +634,66 @@ export class TelegramBridge {
         }),
       },
     );
+  }
+
+  private createTelegramLogger(): Logger {
+    const logger = new Logger(LogLevel.WARN);
+    logger.handler = (record) => {
+      const message = String(record.message ?? "").replace(/\s+/g, " ").trim().slice(0, 400);
+      if (!message) return;
+
+      const invalidation = sessionInvalidationCode(message);
+      if (invalidation) {
+        void this.handleInvalidatedSession(invalidation);
+        return;
+      }
+
+      // The update loop repeats one warning on every retry, so an unhandled
+      // failure would otherwise fill the log with the same line for hours.
+      const now = Date.now();
+      const lastSeen = this.telegramLogSeen.get(message);
+      if (lastSeen !== undefined && now - lastSeen < 5 * 60_000) return;
+      this.telegramLogSeen.set(message, now);
+      if (this.telegramLogSeen.size > 50) {
+        for (const [key, seenAt] of this.telegramLogSeen) {
+          if (now - seenAt > 5 * 60_000) this.telegramLogSeen.delete(key);
+        }
+      }
+      void this.log(record.level === LogLevel.ERROR ? "error" : "warn", `Telegram: ${message}`);
+    };
+    return logger;
+  }
+
+  /**
+   * Telegram has thrown the session away; stop pretending otherwise.
+   *
+   * `updates.getDifference` is retried by teleproto's own update manager, which
+   * swallows the error and re-arms a timer, so an invalidated session produces
+   * one warning a minute forever while `publicState()` still reports a healthy
+   * connection. The auth key cannot be revived, so the only honest answer is to
+   * drop it and ask for a new login.
+   */
+  private async handleInvalidatedSession(code: string): Promise<void> {
+    if (this.sessionInvalidated) return;
+    this.sessionInvalidated = true;
+
+    await this.disconnectClient();
+    this.state.session = "";
+    this.accountName = "";
+    this.authStage = "error";
+    this.authError = invalidatedSessionMessage(code);
+    this.lastActivity = this.authError;
+    this.pendingReply = undefined;
+    this.awaitingReplyText = false;
+    this.recentSpeech = undefined;
+    this.captureRequestedUntil = 0;
+    this.voiceItems.clear();
+    await this.log("warn", `Telegram invalidated the session (${code}); stored session cleared, re-login required`);
+    try {
+      await this.persistState();
+    } catch (error) {
+      await this.log("warn", `Could not clear the invalidated Telegram session on disk: ${errorText(error)}`);
+    }
   }
 
   private async onTelegramMessage(event: any): Promise<void> {
@@ -610,6 +761,11 @@ export class TelegramBridge {
         ? `Получено голосовое от ${sender}`
         : `Получено сообщение от ${sender}`;
     } catch (error) {
+      const code = sessionInvalidationCode(errorText(error));
+      if (code) {
+        await this.handleInvalidatedSession(code);
+        return;
+      }
       const message = `Не удалось обработать Telegram-сообщение: ${errorText(error)}`;
       this.lastActivity = message;
       await this.log("error", message);
@@ -618,7 +774,7 @@ export class TelegramBridge {
 
   private async sendReply(text: string, pending: PendingReply): Promise<void> {
     const client = this.requireConnected();
-    await client.sendMessage(pending.peer, { message: text });
+    await this.guardSession(() => client.sendMessage(pending.peer, { message: text }));
     this.pendingReply = undefined;
     this.awaitingReplyText = false;
     this.recentSpeech = undefined;
@@ -725,6 +881,23 @@ export class TelegramBridge {
   private requireConnected(): TelegramClient {
     if (!this.client || this.authStage !== "connected") throw new Error("Сначала войдите в Telegram");
     return this.client;
+  }
+
+  /**
+   * Run one Telegram call and notice a session Telegram has thrown away.
+   *
+   * The error still propagates — the caller has its own reporting — but the
+   * plugin stops claiming to be connected instead of failing every later call
+   * with the same opaque message.
+   */
+  private async guardSession<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      const code = sessionInvalidationCode(errorText(error));
+      if (code) await this.handleInvalidatedSession(code);
+      throw error;
+    }
   }
 
   private failAuth(error: unknown): void {
@@ -1008,7 +1181,48 @@ function friendlyTelegramError(error: unknown): string {
   if (upper.includes("API_ID_INVALID")) return "Telegram не принял API ID или API Hash";
   if (upper.includes("FLOOD_WAIT")) return "Telegram временно ограничил частые попытки входа; попробуйте позже";
   if (upper.includes("AUTH_USER_CANCEL")) return "Вход отменён";
+  const invalidation = sessionInvalidationCode(raw);
+  if (invalidation) return invalidatedSessionMessage(invalidation);
   return raw;
+}
+
+/**
+ * Name the error that means "this session is gone", or return `""`.
+ *
+ * Matched on text rather than on an error class because the loudest source is
+ * teleproto's own log line — the update manager catches the error, formats it
+ * into a string and retries, so the object never reaches this plugin.
+ */
+function sessionInvalidationCode(text: string): string {
+  const upper = text.toUpperCase();
+  for (const code of [
+    "AUTH_KEY_DUPLICATED",
+    "AUTH_KEY_UNREGISTERED",
+    "AUTH_KEY_INVALID",
+    "SESSION_REVOKED",
+    "SESSION_EXPIRED",
+    "USER_DEACTIVATED_BAN",
+    "USER_DEACTIVATED",
+  ]) {
+    if (upper.includes(code)) return code;
+  }
+  // The duplicate-session error is also recognisable by its own sentence, which
+  // is what teleproto prints when it formats the error rather than the code.
+  if (upper.includes("CONCURRENT USAGE OF THE CURRENT SESSION")) return "AUTH_KEY_DUPLICATED";
+  return "";
+}
+
+function invalidatedSessionMessage(code: string): string {
+  if (code === "AUTH_KEY_DUPLICATED") {
+    return "Telegram закрыл сессию: она использовалась из двух подключений одновременно. Войдите в Telegram заново.";
+  }
+  if (code === "SESSION_REVOKED") {
+    return "Сессия отключена в настройках Telegram. Войдите заново.";
+  }
+  if (code === "USER_DEACTIVATED" || code === "USER_DEACTIVATED_BAN") {
+    return "Telegram заблокировал этот аккаунт — плагин не может к нему подключиться.";
+  }
+  return "Сессия Telegram больше не действительна. Войдите заново.";
 }
 
 function errorText(error: unknown): string {

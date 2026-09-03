@@ -17,6 +17,27 @@ export function createTelegramTransport(config: TelegramTransportConfig): Socket
   const accessToken = config.accessToken;
   const reportMode = config.onMode;
 
+  /**
+   * Every socket this factory makes must leave the machine the same way.
+   *
+   * Telegram invalidates a session it sees used "from multiple connections"
+   * (`AUTH_KEY_DUPLICATED`), and one client is more than one socket: the main
+   * connection, a media connection for a download, a reconnect after a drop.
+   * The direct attempt below has a 4.5-second handshake budget, so on a flaky
+   * network it succeeds for one socket and times out for the next — and then one
+   * auth key reaches Telegram from this machine's address and from the relay's
+   * at the same time, which is exactly the shape of the check. Deciding the
+   * route once per client and holding it costs latency at worst; deciding it per
+   * socket costs the user's session.
+   */
+  let mode: "direct_wss" | "server_relay" | undefined;
+
+  const setMode = (next: "direct_wss" | "server_relay"): void => {
+    if (mode === next) return;
+    mode = next;
+    reportMode?.(next);
+  };
+
   class AutomaticTelegramWebSocket implements SocketInterface {
     static readonly isWebSocket = true;
 
@@ -37,28 +58,37 @@ export function createTelegramTransport(config: TelegramTransportConfig): Socket
 
       this.reset();
       const telegramPath = testServers ? "/apiws_test" : "/apiws";
-      try {
-        const direct = await openWebSocket(
-          `wss://${targetHost}:443${telegramPath}`,
-          undefined,
-          4_500,
-        );
-        this.attach(direct);
-        reportMode?.("direct_wss");
-        return this;
-      } catch {
-        const endpoint = new URL(relayUrl);
-        endpoint.searchParams.set("target", targetHost);
-        endpoint.searchParams.set("test", testServers ? "1" : "0");
-        const relay = await openWebSocket(
-          endpoint.toString(),
-          { authorization: `Bearer ${accessToken}` },
-          10_000,
-        );
-        this.attach(relay);
-        reportMode?.("server_relay");
-        return this;
+
+      // Once the client is on the relay it stays there. Reaching for the direct
+      // path again would put a second address behind the same auth key.
+      if (mode !== "server_relay") {
+        try {
+          const direct = await openWebSocket(
+            `wss://${targetHost}:443${telegramPath}`,
+            undefined,
+            4_500,
+          );
+          this.attach(direct);
+          setMode("direct_wss");
+          return this;
+        } catch {
+          // Falling through to the relay is safe even for a client that was
+          // direct: the socket that used that route just failed, so the two are
+          // never live at the same time.
+        }
       }
+
+      const endpoint = new URL(relayUrl);
+      endpoint.searchParams.set("target", targetHost);
+      endpoint.searchParams.set("test", testServers ? "1" : "0");
+      const relay = await openWebSocket(
+        endpoint.toString(),
+        { authorization: `Bearer ${accessToken}` },
+        10_000,
+      );
+      this.attach(relay);
+      setMode("server_relay");
+      return this;
     }
 
     async readExactly(number: number): Promise<Buffer> {

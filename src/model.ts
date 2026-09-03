@@ -1,9 +1,11 @@
-export const MAX_SELECTED_CHATS = 10;
+export const MAX_SELECTED_CHATS = 1000;
 export const MAX_VOICE_BYTES = 20 * 1024 * 1024;
 
 export interface Preferences {
   enabled: boolean;
   selectedChatIds: string[];
+  selectedChatNames: Record<string, string>;
+  hideIdentity: boolean;
   textTemplate: string;
   voiceTemplate: string;
   replyWindowSeconds: number;
@@ -33,6 +35,8 @@ export interface TemplateValues {
 export const DEFAULT_PREFERENCES: Preferences = {
   enabled: true,
   selectedChatIds: [],
+  selectedChatNames: {},
+  hideIdentity: false,
   textTemplate: "Вам написал {sender}. {message}",
   voiceTemplate: "Вам прислал голосовое сообщение {sender}",
   replyWindowSeconds: 300,
@@ -44,7 +48,7 @@ export function defaultState(): PersistedState {
     schemaVersion: 2,
     phone: "",
     session: "",
-    preferences: { ...DEFAULT_PREFERENCES, selectedChatIds: [] },
+    preferences: { ...DEFAULT_PREFERENCES, selectedChatIds: [], selectedChatNames: {} },
   };
 }
 
@@ -55,6 +59,8 @@ export function sanitizePreferences(value: Partial<Preferences> | undefined): Pr
   return {
     enabled: value?.enabled !== false,
     selectedChatIds: selected,
+    selectedChatNames: sanitizeChatNames(value?.selectedChatNames, selected),
+    hideIdentity: value?.hideIdentity === true,
     textTemplate: cleanText(value?.textTemplate, DEFAULT_PREFERENCES.textTemplate, 500),
     voiceTemplate: cleanText(value?.voiceTemplate, DEFAULT_PREFERENCES.voiceTemplate, 500),
     replyWindowSeconds: clampInteger(value?.replyWindowSeconds, 10, 3600, DEFAULT_PREFERENCES.replyWindowSeconds),
@@ -64,6 +70,19 @@ export function sanitizePreferences(value: Partial<Preferences> | undefined): Pr
       500,
     ),
   };
+}
+
+function sanitizeChatNames(value: unknown, selectedChatIds: string[]): Record<string, string> {
+  const names: Record<string, string> = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return names;
+  const source = value as Record<string, unknown>;
+  for (const id of selectedChatIds) {
+    const title = source[id];
+    if (typeof title !== "string") continue;
+    const trimmed = title.trim().slice(0, 160);
+    if (trimmed) names[id] = trimmed;
+  }
+  return names;
 }
 
 export function applyTemplate(template: string, values: TemplateValues): string {

@@ -52,6 +52,14 @@ export const app = plugin({
     onCall: {
       getState: () => bridge.publicState(),
       listChats: async () => ({ chats: await bridge.listChats() }),
+      monitorAllChats: async () => {
+        const result = await bridge.monitorAllChats();
+        return { chats: result.chats, state: bridge.publicState() };
+      },
+      setHideIdentity: async (params) => ({
+        state: await bridge.setHideIdentity(asRecord(params).hidden),
+      }),
+      exportCommandsFile: async () => bridge.exportCommandsFile(),
       beginLogin: async (params) => {
         const value = asRecord(params);
         return { state: await bridge.beginLogin(value.phone) };

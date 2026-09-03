@@ -6,7 +6,10 @@ TG for Astra connects a personal Telegram account to Astra. The plugin monitors 
 
 - Login with a phone number, Telegram verification code, and two-step verification password.
 - Support for private chats, groups, and channels.
-- Monitoring of up to 10 chats at the same time.
+- Monitoring of up to 1000 chats at the same time, with a one-click "monitor every chat" action.
+- A privacy toggle that masks the account name and phone number; the state is kept in the plugin's own state file.
+- A panel that lists the chats currently being monitored.
+- A button that writes the two ready-made Astra commands out as an `astra-commands` file to import.
 - Customizable notification and reply-confirmation messages.
 - Playback of Telegram voice messages in their original audio.
 - Automatic transport selection: Telegram WSS first, followed by a fallback WSS relay.

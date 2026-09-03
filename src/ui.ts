@@ -378,9 +378,16 @@ export function renderAppHtml(): string {
     .account-copy strong { display: block; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
     .account-copy span { display: block; margin-top: 2px; font-size: 11px; }
     .verified { display: inline-flex; align-items: center; gap: 5px; color: #8ce9bd; font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+    .icon-btn { width: 36px; min-height: 36px; padding: 0; flex: 0 0 auto; border-radius: 12px; }
+    .icon-btn svg { width: 17px; height: 17px; }
+    .icon-btn .eye-off { display: none; }
+    button.on { color: #9bd6ff; border-color: rgba(72,168,255,.38); background: rgba(72,168,255,.12); }
+    .icon-btn.on .eye-on { display: none; }
+    .icon-btn.on .eye-off { display: block; }
+    .masked { color: #8b8899 !important; letter-spacing: .18em; }
 
-    .chat-tools { display: grid; grid-template-columns: 1fr auto; gap: 9px; margin-bottom: 10px; }
-    .search-wrap { position: relative; }
+    .chat-tools { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 10px; }
+    .search-wrap { position: relative; flex: 1 1 150px; min-width: 0; }
     .search-wrap svg { position: absolute; z-index: 1; top: 50%; left: 12px; width: 15px; height: 15px; color: #6e6b7d; transform: translateY(-50%); pointer-events: none; }
     .search-wrap input { padding-left: 36px; }
     .chat-list {
@@ -435,6 +442,51 @@ export function renderAppHtml(): string {
     .empty-state svg { width: 34px; height: 34px; margin-bottom: 10px; color: #565365; }
     .empty-state strong { display: block; margin-bottom: 3px; color: #aaa7b5; font-size: 12px; }
     .selected-summary { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; padding: 5px 9px; border: 1px solid rgba(72,168,255,.12); border-radius: 99px; background: rgba(72,168,255,.055); color: #96cffa; }
+
+    .monitored-panel { margin-top: 12px; padding: 13px 14px; border: 1px solid rgba(72,168,255,.14); border-radius: 15px; background: rgba(72,168,255,.045); animation: unfold .3s ease both; }
+    .monitored-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 9px; color: #9ecffa; font-size: 10px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+    .monitored-tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; max-height: 154px; overflow: auto; }
+    .monitored-tag { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 5px 9px; border: 1px solid rgba(255,255,255,.09); border-radius: 99px; background: rgba(255,255,255,.045); color: #d3d1de; font-size: 11px; }
+    .monitored-tag i { width: 5px; height: 5px; flex: 0 0 auto; border-radius: 50%; background: var(--success); box-shadow: 0 0 8px rgba(88,223,165,.6); }
+    .monitored-tag span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .monitored-empty { color: #777486; font-size: 11px; }
+    .monitored-note { margin: 9px 0 0; color: #777486; font-size: 10px; }
+    .monitored-note:empty { display: none; }
+
+    .dialog-veil {
+      position: fixed;
+      z-index: 20;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(6,6,11,.62);
+      backdrop-filter: blur(6px);
+      animation: unfold .2s ease both;
+    }
+    .dialog {
+      width: min(430px, 100%);
+      padding: 20px;
+      border: 1px solid var(--stroke-strong);
+      border-radius: 19px;
+      background: linear-gradient(150deg, rgba(255,255,255,.05), transparent 42%), rgba(18,18,28,.97);
+      box-shadow: 0 30px 90px rgba(0,0,0,.5), inset 0 1px rgba(255,255,255,.06);
+    }
+    .dialog h3 { margin: 0 0 8px; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+    .dialog p { margin: 0; color: #a9a6b8; font-size: 12px; }
+    .dialog .actions { justify-content: flex-end; margin-top: 18px; }
+    .dialog-path {
+      display: block;
+      margin-top: 11px;
+      padding: 9px 10px;
+      overflow-wrap: anywhere;
+      border: 1px solid rgba(139,92,246,.18);
+      border-radius: 10px;
+      background: rgba(139,92,246,.07);
+      color: #c8b8ff;
+      font: 11px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+      user-select: text;
+    }
 
     .monitor-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; padding: 13px 14px; border: 1px solid rgba(92,225,230,.1); border-radius: 14px; background: rgba(92,225,230,.035); }
     .monitor-copy strong { display: block; color: #d9d7e1; font-size: 12px; }
@@ -556,7 +608,7 @@ export function renderAppHtml(): string {
       .card { padding: 18px; border-radius: 21px; }
       .fields, .template-grid, .reply-grid, .time-grid { grid-template-columns: 1fr; }
       .field.full { grid-column: auto; }
-      .chat-tools { grid-template-columns: 1fr; }
+      .chat-tools { flex-direction: column; align-items: stretch; }
       .chat-tools button { width: 100%; }
       .monitor-row { align-items: flex-start; }
       .footer { align-items: flex-start; flex-direction: column; }
@@ -596,6 +648,7 @@ export function renderAppHtml(): string {
           <div class="account">
             <div class="avatar"><svg viewBox="0 0 32 32" fill="none"><path d="M6.2 15.3 25.1 7.8c1-.4 1.8.4 1.5 1.5l-3.2 15.2c-.2 1.1-1 1.4-1.9.8l-5-3.7-2.4 2.4c-.3.3-.5.5-1 .5l.4-5.1 9.2-8.3c.4-.4-.1-.6-.6-.2l-11.4 7.2-4.9-1.5c-1.1-.3-1.1-1.1.4-1.7Z" fill="white"/></svg></div>
             <div class="account-copy"><strong id="accountName"></strong><span id="accountPhone" class="muted"></span></div>
+            <button id="privacyBtn" class="icon-btn" type="button" title="Скрыть имя и номер" aria-label="Скрыть имя и номер" aria-pressed="false"><svg class="eye-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2.6 12S6 5.9 12 5.9 21.4 12 21.4 12 18 18.1 12 18.1 2.6 12 2.6 12Z"/><circle cx="12" cy="12" r="3.1"/></svg><svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 4l16 16"/><path d="M9.9 5.4A9.6 9.6 0 0 1 12 5.2c6 0 9.4 6.1 9.4 6.1a18 18 0 0 1-2.7 3.5M6.4 7.3A17.7 17.7 0 0 0 2.6 11.3S6 17.4 12 17.4c1.2 0 2.3-.2 3.3-.6"/><path d="M9.7 9.8a3.1 3.1 0 0 0 4.3 4.4"/></svg></button>
             <span class="verified">● online</span>
           </div>
           <div class="actions"><button id="logoutBtn" class="danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10"/></svg>Выйти из Telegram</button></div>
@@ -613,12 +666,13 @@ export function renderAppHtml(): string {
 
       <section class="card chat-card" style="--delay:.2s">
         <div class="card-head">
-          <div class="section-title"><span class="section-index">02</span><div><h2>Чаты для мониторинга</h2><p class="subtitle">Личные диалоги, группы и каналы · до <span id="maxChats">10</span></p></div></div>
+          <div class="section-title"><span class="section-index">02</span><div><h2>Чаты для мониторинга</h2><p class="subtitle">Личные диалоги, группы и каналы · до <span id="maxChats">1000</span></p></div></div>
           <span class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55"><path d="M4 6h16v11H9l-5 4V6Z"/><path d="M8 10h8M8 13h5"/></svg></span>
         </div>
-        <div class="chat-tools"><div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg><input id="chatSearch" placeholder="Найти чат"></div><button id="loadChatsBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 8.5A7 7 0 0 1 18.8 7M17.9 15.5A7 7 0 0 1 5.2 17"/></svg>Загрузить</button></div>
+        <div class="chat-tools"><div class="search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg><input id="chatSearch" placeholder="Найти чат"></div><button id="loadChatsBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 8.5A7 7 0 0 1 18.8 7M17.9 15.5A7 7 0 0 1 5.2 17"/></svg>Загрузить</button><button id="monitorAllBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 12.5l3.5 3.5L20 4"/><path d="M4 19h11"/></svg>Мониторить все</button><button id="monitoredBtn" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2.6 12S6 5.9 12 5.9 21.4 12 21.4 12 18 18.1 12 18.1 2.6 12 2.6 12Z"/><circle cx="12" cy="12" r="3.1"/></svg>Активные чаты</button></div>
         <div id="chatList" class="chat-list"><div class="empty-state"><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.45"><path d="M4 5h16v11H9l-5 4V5Z"/><path d="M9 9h6M9 12h4"/></svg><strong>Сначала подключите Telegram</strong><span>После входа здесь появятся ваши чаты</span></div></div></div>
-        <div class="actions"><button id="saveChatsBtn" class="primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 4h12l2 2v14H5V4Z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg>Сохранить</button><span id="selectedCount" class="count selected-summary">0 / 10</span></div>
+        <div id="monitoredPanel" class="monitored-panel" hidden><div class="monitored-head"><span>Сейчас мониторятся</span><span id="monitoredCount"></span></div><div id="monitoredTags" class="monitored-tags"></div><p id="monitoredNote" class="monitored-note"></p></div>
+        <div class="actions"><button id="saveChatsBtn" class="primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 4h12l2 2v14H5V4Z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg>Сохранить</button><span id="selectedCount" class="count selected-summary">0 / 1000</span></div>
       </section>
 
       <section class="card settings-card wide" style="--delay:.26s">
@@ -642,23 +696,37 @@ export function renderAppHtml(): string {
 
       <section class="card voice-card wide" style="--delay:.32s">
         <div class="card-head">
-          <div class="section-title"><span class="section-index">04</span><div><h2>Настройка команды Astra</h2><p class="subtitle">Соберите эту цепочку один раз — дальше сообщения запускают её автоматически</p></div></div>
+          <div class="section-title"><span class="section-index">04</span><div><h2>Команды Astra</h2><p class="subtitle">Готовая связка триггеров и действий — добавляется одним файлом</p></div></div>
           <span class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55"><path d="M4 12h2l2-6 4 12 3-9 2 3h3"/></svg></span>
         </div>
         <div class="voice-layout">
           <div>
+            <div class="notice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.7v.6"/></svg><span>Плагин не может создавать команды сам — этот шаг Astra оставляет за вами. Кнопка ниже готовит файл с обеими нужными командами, а <b>«Импорт»</b> в разделе «Команды» добавляет их.</span></div>
             <ol class="steps">
-              <li>Откройте <b>«Команды»</b>, создайте или выберите команду и нажмите <b>«+ Узлы» → «Новое сообщение Telegram»</b>. Внутри триггера ничего вводить не нужно — оставьте статус <b>«Включён»</b>.</li>
-              <li>Добавьте действие <b>«Произнести»</b>. В поле <b>«Текст»</b> вставьте <button type="button" class="code copy-code" data-copy="{announcement}">{announcement}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button>, включите <b>«Использовать голос из настроек»</b> и оставьте отмеченным <b>«Ждать завершения»</b>.</li>
-              <li>Добавьте действие плагина <b>«Проиграть голосовое Telegram»</b>. Настраивать внутри ничего не нужно: плагин сам берёт следующее загруженное голосовое. Для текстовых сообщений шаг тихо пропускается.</li>
-              <li>Проверьте соединения: <b>Новое сообщение Telegram → Произнести → Проиграть голосовое Telegram</b>. Затем включите переключатель самой команды.</li>
+              <li>Нажмите <b>«Подготовить команды»</b>. Плагин сохранит файл <b>tg-astra-commands.astra</b> и покажет полный путь к нему.</li>
+              <li>Откройте раздел <b>«Команды»</b> в Astra и выберите <b>«Импорт»</b>, затем укажите этот файл.</li>
+              <li>В списке появятся <b>«тг»</b> и <b>«тг ответ»</b> — озвучивание сообщений и голосовой ответ. Убедитесь, что их переключатели включены; внутри настраивать нечего.</li>
             </ol>
-            <div class="monitor-row" style="margin-top:18px"><div class="monitor-copy"><strong>Чтобы Astra могла ответить в Telegram</strong><span>Отдельная команда передаёт произнесённый ответ плагину</span></div></div>
-            <ol class="steps" style="margin-top:14px">
-              <li>Создайте <b>вторую команду</b>, например <b>«Ответ Telegram»</b>, и добавьте триггер <b>«Текстовая фраза»</b>.</li>
-              <li>Впишите любое удобное <b>одно командное слово</b>, например <button type="button" class="code copy-code" data-copy="ответь">ответь<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button> или <button type="button" class="code copy-code" data-copy="напиши">напиши<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button>. Отключите точное совпадение, чтобы команда принимала продолжение: «напиши привет».</li>
-              <li>Добавьте единственное действие плагина <b>«Перехватить ответ Telegram»</b>, соедините с триггером и включите команду. Узлы <b>«Произнести»</b> и <b>«Проиграть голосовое»</b> в эту вторую команду добавлять не нужно.</li>
-            </ol>
+            <div class="actions">
+              <button id="commandsBtn" class="primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 4v11M8 11.5l4 4 4-4"/><path d="M5 19h14"/></svg>Подготовить команды</button>
+              <button id="manualBtn" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M4 12h16M4 17h10"/></svg>Собрать вручную</button>
+            </div>
+            <p id="commandsResult" class="hint"></p>
+            <div id="manualBlock" hidden>
+              <div class="monitor-row" style="margin-top:18px"><div class="monitor-copy"><strong>Команда озвучивания</strong><span>То же, что делает импорт, но узлами вручную</span></div></div>
+              <ol class="steps" style="margin-top:14px">
+                <li>Откройте <b>«Команды»</b>, создайте или выберите команду и нажмите <b>«+ Узлы» → «Новое сообщение Telegram»</b>. Внутри триггера ничего вводить не нужно — оставьте статус <b>«Включён»</b>.</li>
+                <li>Добавьте действие <b>«Произнести»</b>. В поле <b>«Текст»</b> вставьте <button type="button" class="code copy-code" data-copy="{announcement}">{announcement}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button>, включите <b>«Использовать голос из настроек»</b> и оставьте отмеченным <b>«Ждать завершения»</b>.</li>
+                <li>Добавьте действие плагина <b>«Проиграть голосовое Telegram»</b>. Настраивать внутри ничего не нужно: плагин сам берёт следующее загруженное голосовое. Для текстовых сообщений шаг тихо пропускается.</li>
+                <li>Проверьте соединения: <b>Новое сообщение Telegram → Произнести → Проиграть голосовое Telegram</b>. Затем включите переключатель самой команды.</li>
+              </ol>
+              <div class="monitor-row" style="margin-top:18px"><div class="monitor-copy"><strong>Команда ответа</strong><span>Отдельная команда передаёт произнесённый ответ плагину</span></div></div>
+              <ol class="steps" style="margin-top:14px">
+                <li>Создайте <b>вторую команду</b>, например <b>«Ответ Telegram»</b>, и добавьте триггер <b>«Текстовая фраза»</b>.</li>
+                <li>Впишите любое удобное <b>одно командное слово</b>, например <button type="button" class="code copy-code" data-copy="ответь">ответь<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button> или <button type="button" class="code copy-code" data-copy="напиши">напиши<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button>. Отключите точное совпадение, чтобы команда принимала продолжение: «напиши привет».</li>
+                <li>Добавьте единственное действие плагина <b>«Перехватить ответ Telegram»</b>, соедините с триггером и включите команду. Узлы <b>«Произнести»</b> и <b>«Проиграть голосовое»</b> в эту вторую команду добавлять не нужно.</li>
+              </ol>
+            </div>
           </div>
           <div class="voice-orb-wrap" aria-hidden="true"><div class="voice-orb"><span class="waveform"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div><span class="voice-caption">Astra voice engine</span></div>
         </div>
@@ -666,6 +734,14 @@ export function renderAppHtml(): string {
     </div>
     <footer class="footer"><span class="footer-brand"><i></i>Astra Telegram Bridge</span><span>Личная MTProto-сессия хранится локально</span></footer>
   </main>
+  <div id="dialogVeil" class="dialog-veil" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+      <h3 id="dialogTitle"></h3>
+      <p id="dialogText"></p>
+      <code id="dialogPath" class="dialog-path" hidden></code>
+      <div class="actions"><button id="dialogCancel">Отмена</button><button id="dialogConfirm" class="primary">Продолжить</button></div>
+    </div>
+  </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script>
   (() => {
@@ -677,6 +753,9 @@ export function renderAppHtml(): string {
     let selectionDirty = false;
     let settingsDirty = false;
     let refreshing = false;
+    let privacyHidden = false;
+    let monitoredOpen = false;
+    let dialogResolve = null;
 
     function api(method, params = {}, timeoutMs = 12000) {
       if (!astra || typeof astra.callBackend !== 'function') {
@@ -728,6 +807,38 @@ export function renderAppHtml(): string {
       button.classList.toggle('is-busy', busy);
     }
 
+    // The iframe is sandboxed, so window.confirm() is blocked and returns
+    // nothing: a button gated on it never runs. This is the replacement.
+    function ask(title, text, confirmLabel = 'Продолжить') {
+      $('dialogTitle').textContent = title;
+      $('dialogText').textContent = text;
+      $('dialogPath').hidden = true;
+      $('dialogConfirm').textContent = confirmLabel;
+      $('dialogCancel').hidden = false;
+      $('dialogVeil').hidden = false;
+      $('dialogConfirm').focus();
+      return new Promise((resolve) => { dialogResolve = resolve; });
+    }
+
+    function tell(title, text, path = '') {
+      $('dialogTitle').textContent = title;
+      $('dialogText').textContent = text;
+      $('dialogPath').textContent = path;
+      $('dialogPath').hidden = !path;
+      $('dialogConfirm').textContent = 'Понятно';
+      $('dialogCancel').hidden = true;
+      $('dialogVeil').hidden = false;
+      $('dialogConfirm').focus();
+      return new Promise((resolve) => { dialogResolve = resolve; });
+    }
+
+    function closeDialog(answer) {
+      $('dialogVeil').hidden = true;
+      const resolve = dialogResolve;
+      dialogResolve = null;
+      if (resolve) resolve(answer);
+    }
+
     function renderState(next) {
       const previousConnected = state?.connected;
       const previousSelected = new Set(selected);
@@ -735,8 +846,6 @@ export function renderAppHtml(): string {
       const connected = next.connected;
       $('accountConnected').hidden = !connected;
       $('accountLogin').hidden = connected;
-      $('accountName').textContent = next.accountName || 'Telegram';
-      $('accountPhone').textContent = next.phone || '';
       $('phone').value ||= next.phone || '';
       $('authError').textContent = next.authError || '';
       $('codeBlock').hidden = next.authStage !== 'awaiting_code';
@@ -745,6 +854,8 @@ export function renderAppHtml(): string {
       $('maxChats').textContent = next.maxSelectedChats;
 
       const p = next.preferences;
+      privacyHidden = p.hideIdentity === true;
+      renderIdentity();
       if (!selectionDirty) selected = new Set(p.selectedChatIds || []);
       const selectionChanged = previousSelected.size !== selected.size || [...previousSelected].some((id) => !selected.has(id));
       if (!settingsDirty) {
@@ -756,7 +867,6 @@ export function renderAppHtml(): string {
       }
 
       $('activity').textContent = next.lastActivity + (next.replyTarget ? ' · Ответ для «' + next.replyTarget.chat + '» доступен ещё ' + next.replyTarget.secondsLeft + ' сек.' : '');
-      $('accountMini').textContent = connected ? (next.accountName || 'Telegram подключён') : authStageLabel(next.authStage);
       $('chatMini').textContent = p.selectedChatIds.length ? p.selectedChatIds.length + ' из ' + next.maxSelectedChats + ' чатов' : 'Чаты не выбраны';
       $('replyMini').textContent = 'Команда задаётся в Astra';
 
@@ -765,6 +875,80 @@ export function renderAppHtml(): string {
       top.className = 'status ' + (next.monitoring ? 'ok' : next.authStage === 'error' ? 'error' : connected || next.authStage.includes('awaiting') || next.authStage.includes('verifying') || next.authStage === 'sending_code' || next.authStage === 'restoring' ? 'warn' : '');
       if (previousConnected !== connected || selectionChanged) renderChats();
       else updateSelected();
+    }
+
+    function maskValue(value) {
+      const text = String(value || '');
+      if (!text) return '';
+      const visible = Array.from(text).slice(0, 2).join('');
+      return visible + '•'.repeat(Math.max(3, Math.min(9, Array.from(text).length - visible.length)));
+    }
+
+    function renderIdentity() {
+      const button = $('privacyBtn');
+      button.classList.toggle('on', privacyHidden);
+      button.setAttribute('aria-pressed', String(privacyHidden));
+      const label = privacyHidden ? 'Показать имя и номер' : 'Скрыть имя и номер';
+      button.title = label;
+      button.setAttribute('aria-label', label);
+      if (!state) return;
+
+      const name = state.accountName || 'Telegram';
+      const phone = state.phone || '';
+      $('accountName').textContent = privacyHidden ? maskValue(name) : name;
+      $('accountPhone').textContent = privacyHidden ? maskValue(phone) : phone;
+      $('accountName').classList.toggle('masked', privacyHidden);
+      $('accountPhone').classList.toggle('masked', privacyHidden);
+
+      const connected = Boolean(state.connected);
+      const mini = connected
+        ? (state.accountName || 'Telegram подключён')
+        : authStageLabel(state.authStage);
+      $('accountMini').textContent = connected && privacyHidden ? maskValue(mini) : mini;
+      $('accountMini').classList.toggle('masked', connected && privacyHidden);
+    }
+
+    async function togglePrivacy() {
+      const button = $('privacyBtn');
+      const next = !privacyHidden;
+      setBusy(button, true);
+      try {
+        // The flag lives in the plugin's own state file. localStorage throws in
+        // this sandboxed iframe, so nothing in the page can remember it.
+        const result = await api('setHideIdentity', {hidden: next});
+        renderState(result.state);
+        toast(next ? 'Имя и номер скрыты' : 'Имя и номер показаны');
+      } catch (error) {
+        toast(error.message, true);
+      } finally {
+        setBusy(button, false);
+      }
+    }
+
+    function renderMonitored() {
+      const button = $('monitoredBtn');
+      button.classList.toggle('on', monitoredOpen);
+      button.setAttribute('aria-pressed', String(monitoredOpen));
+      $('monitoredPanel').hidden = !monitoredOpen;
+      if (!monitoredOpen) return;
+
+      const names = state?.preferences?.selectedChatNames || {};
+      const active = state?.preferences?.selectedChatIds || [];
+      const titles = new Map(chats.map((chat) => [chat.id, chat.title]));
+      const pending = active.length !== selected.size || active.some((id) => !selected.has(id));
+      $('monitoredCount').textContent = active.length + ' / ' + (state?.maxSelectedChats || 1000);
+      $('monitoredNote').textContent = !state?.preferences?.enabled
+        ? 'Фоновый мониторинг выключен в блоке 03 — сообщения не озвучиваются.'
+        : pending
+          ? 'Ниже сохранённый список. Нажмите «Сохранить», чтобы применить текущий выбор.'
+          : '';
+      $('monitoredTags').innerHTML = active.length
+        ? active
+            .map((id) => ({ id, title: titles.get(id) || names[id] || 'Чат ' + id }))
+            .sort((left, right) => left.title.localeCompare(right.title, 'ru'))
+            .map((chat) => '<span class="monitored-tag" title="' + escapeHtml(chat.title) + '"><i></i><span>' + escapeHtml(chat.title) + '</span></span>')
+            .join('')
+        : '<span class="monitored-empty">Пока ни один чат не мониторится — выберите чаты выше и нажмите «Сохранить».</span>';
     }
 
     function authStageLabel(stage) {
@@ -790,26 +974,30 @@ export function renderAppHtml(): string {
         ? visible.map((chat, index) => {
             const initial = Array.from(chat.title.trim())[0] || 'T';
             const checked = selected.has(chat.id);
-            return '<label class="chat' + (checked ? ' selected' : '') + '" style="--i:' + index + '"><input type="checkbox" data-chat="' + escapeHtml(chat.id) + '" ' + (checked ? 'checked' : '') + '><span class="chat-avatar">' + escapeHtml(initial) + '</span><span class="chat-name">' + escapeHtml(chat.title) + '<span class="chat-kind">' + chatKind(chat.kind) + '</span></span>' + (chat.unreadCount ? '<span class="count unread">' + Number(chat.unreadCount) + '</span>' : '') + '</label>';
+            return '<label class="chat' + (checked ? ' selected' : '') + '" style="--i:' + Math.min(index, 14) + '"><input type="checkbox" data-chat="' + escapeHtml(chat.id) + '" ' + (checked ? 'checked' : '') + '><span class="chat-avatar">' + escapeHtml(initial) + '</span><span class="chat-name">' + escapeHtml(chat.title) + '<span class="chat-kind">' + chatKind(chat.kind) + '</span></span>' + (chat.unreadCount ? '<span class="count unread">' + Number(chat.unreadCount) + '</span>' : '') + '</label>';
           }).join('')
         : '<div class="empty-state"><div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.45"><path d="M4 5h16v11H9l-5 4V5Z"/><path d="M9 9h6M9 12h4"/></svg><strong>' + emptyTitle + '</strong><span>' + emptyText + '</span></div></div>';
+      updateSelected();
+    }
 
-      $('chatList').querySelectorAll('[data-chat]').forEach((box) => box.addEventListener('change', () => {
-        if (box.checked && selected.size >= state.maxSelectedChats) {
-          box.checked = false;
-          toast('Можно выбрать не больше ' + state.maxSelectedChats + ' чатов', true);
-          return;
-        }
-        box.checked ? selected.add(box.dataset.chat) : selected.delete(box.dataset.chat);
-        box.closest('.chat').classList.toggle('selected', box.checked);
-        selectionDirty = true;
-        updateSelected();
-      }));
+    function onChatToggle(event) {
+      const box = event.target;
+      if (!box || !box.dataset || !box.dataset.chat) return;
+      const limit = state?.maxSelectedChats || 1000;
+      if (box.checked && selected.size >= limit) {
+        box.checked = false;
+        toast('Можно выбрать не больше ' + limit + ' чатов', true);
+        return;
+      }
+      box.checked ? selected.add(box.dataset.chat) : selected.delete(box.dataset.chat);
+      box.closest('.chat').classList.toggle('selected', box.checked);
+      selectionDirty = true;
       updateSelected();
     }
 
     function updateSelected() {
-      $('selectedCount').textContent = selected.size + ' / ' + (state?.maxSelectedChats || 10);
+      $('selectedCount').textContent = selected.size + ' / ' + (state?.maxSelectedChats || 1000);
+      renderMonitored();
     }
 
     async function refresh() {
@@ -824,6 +1012,7 @@ export function renderAppHtml(): string {
       const body = {
         enabled: $('enabled').checked,
         selectedChatIds: [...selected],
+        selectedChatNames: selectedChatNames(),
         textTemplate: $('textTemplate').value,
         voiceTemplate: $('voiceTemplate').value,
         replyWindowSeconds: Number($('replyWindow').value),
@@ -836,16 +1025,91 @@ export function renderAppHtml(): string {
       toast('Настройки сохранены');
     }
 
+    function selectedChatNames() {
+      const known = state?.preferences?.selectedChatNames || {};
+      const titles = new Map(chats.map((chat) => [chat.id, chat.title]));
+      const names = {};
+      selected.forEach((id) => {
+        const title = titles.get(id) || known[id];
+        if (title) names[id] = title;
+      });
+      return names;
+    }
+
     $('sendCodeBtn').onclick = async () => { const button=$('sendCodeBtn'); setBusy(button,true); try { const result=await api('beginLogin',{phone:$('phone').value}); renderState(result.state); } catch(error){toast(error.message,true);} finally{setBusy(button,false);} };
     $('codeBtn').onclick = async () => { const button=$('codeBtn'); setBusy(button,true); try { const result=await api('submitCode',{code:$('code').value}); $('code').value=''; renderState(result.state); } catch(error){toast(error.message,true);} finally{setBusy(button,false);} };
     $('passwordBtn').onclick = async () => { const button=$('passwordBtn'); setBusy(button,true); try { const result=await api('submitPassword',{password:$('password').value}); $('password').value=''; renderState(result.state); } catch(error){toast(error.message,true);} finally{setBusy(button,false);} };
-    $('logoutBtn').onclick = async () => { if(!confirm('Выйти из Telegram и удалить локальную сессию?')) return; await api('logout'); chats=[]; selectionDirty=false; settingsDirty=false; await refresh(); };
-    $('loadChatsBtn').onclick = async () => { const button=$('loadChatsBtn'); setBusy(button,true); try { const result=await api('listChats'); chats=result.chats; renderChats(); toast('Чаты загружены'); } catch(error){toast(error.message,true);} finally{setBusy(button,false);} };
+    $('logoutBtn').onclick = async () => {
+      if (!await ask('Выйти из Telegram?', 'Локальная сессия будет удалена, и войти придётся заново — по номеру и коду.', 'Выйти')) return;
+      const button = $('logoutBtn');
+      setBusy(button, true);
+      try { await api('logout'); chats=[]; selectionDirty=false; settingsDirty=false; monitoredOpen=false; await refresh(); }
+      catch (error) { toast(error.message, true); }
+      finally { setBusy(button, false); }
+    };
+    $('privacyBtn').onclick = togglePrivacy;
+    $('monitoredBtn').onclick = async () => {
+      monitoredOpen = !monitoredOpen;
+      renderMonitored();
+      if (!monitoredOpen) return;
+      $('monitoredPanel').scrollIntoView({block:'nearest', behavior:'smooth'});
+      if (!state?.connected || chats.length) return;
+      const names = state.preferences.selectedChatNames || {};
+      if (!(state.preferences.selectedChatIds || []).some((id) => !names[id])) return;
+      const button = $('monitoredBtn');
+      setBusy(button, true);
+      try { chats = (await api('listChats', {}, 45000)).chats; renderChats(); }
+      catch (_) {}
+      finally { setBusy(button, false); }
+    };
+    $('loadChatsBtn').onclick = async () => { const button=$('loadChatsBtn'); setBusy(button,true); try { const result=await api('listChats',{},45000); chats=result.chats; renderChats(); toast('Загружено чатов: ' + chats.length); } catch(error){toast(error.message,true);} finally{setBusy(button,false);} };
+    $('monitorAllBtn').onclick = async () => {
+      const button=$('monitorAllBtn');
+      if (!state?.connected) return toast('Сначала подключите Telegram', true);
+      if (!await ask('Мониторить все чаты?', 'Astra будет озвучивать сообщения из каждого доступного чата, включая каналы и группы. Выбор можно изменить в любой момент.', 'Включить')) return;
+      setBusy(button,true);
+      try {
+        const result=await api('monitorAllChats',{},60000);
+        chats=result.chats;
+        selectionDirty=false;
+        monitoredOpen=true;
+        renderState(result.state);
+        renderChats();
+        toast('Мониторим все чаты: ' + result.state.preferences.selectedChatIds.length);
+      } catch(error){toast(error.message,true);} finally{setBusy(button,false);}
+    };
+    $('commandsBtn').onclick = async () => {
+      const button=$('commandsBtn');
+      setBusy(button,true);
+      try {
+        const result=await api('exportCommandsFile',{},20000);
+        $('commandsResult').textContent = 'Файл готов: ' + result.path + ' · команды: ' + result.names.join(', ');
+        await tell('Файл команд готов', 'Откройте в Astra раздел «Команды» → «Импорт» и укажите этот файл. Внутри: ' + result.names.join(', ') + '.', result.path);
+      } catch(error){ $('commandsResult').textContent=''; toast(error.message,true); }
+      finally{setBusy(button,false);}
+    };
+    $('manualBtn').onclick = () => {
+      const block=$('manualBlock');
+      const open=block.hidden;
+      block.hidden=!open;
+      $('manualBtn').setAttribute('aria-expanded', String(open));
+      $('manualBtn').classList.toggle('on', open);
+    };
+    $('dialogConfirm').onclick = () => closeDialog(true);
+    $('dialogCancel').onclick = () => closeDialog(false);
+    $('dialogVeil').addEventListener('click', (event) => { if (event.target === $('dialogVeil')) closeDialog(false); });
+    document.addEventListener('keydown', (event) => {
+      if ($('dialogVeil').hidden) return;
+      if (event.key === 'Escape') closeDialog(false);
+      if (event.key === 'Enter') closeDialog(true);
+    });
     $('saveChatsBtn').onclick = async () => { try { await savePreferences(); } catch(error){toast(error.message,true);} };
     $('saveSettingsBtn').onclick = async () => { try { await savePreferences(); } catch(error){toast(error.message,true);} };
     $('chatSearch').oninput = renderChats;
+    $('chatList').addEventListener('change', onChatToggle);
     document.querySelectorAll('[data-copy]').forEach((button) => button.addEventListener('click', () => copyValue(button)));
     ['enabled','textTemplate','voiceTemplate','replyWindow','replyConfirmationTemplate'].forEach((id) => $(id).addEventListener('input', () => { settingsDirty = true; }));
+    renderIdentity();
     refresh();
     setInterval(refresh, 2500);
   })();
