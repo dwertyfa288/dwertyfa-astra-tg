@@ -509,11 +509,11 @@ export class TelegramBridge {
 
     if (matchReplyCommand(request, commandPhrase).kind === "none") {
       this.pendingOutgoingMessage = undefined;
-      return `Черновик не создан: запрос должен начинаться с настроенной фразы «${commandPhrase}».`;
+      return `Используйте фразу «${commandPhrase}».`;
     }
-    if (!recipientQuery) return "Черновик не создан: не указан получатель Telegram.";
-    if (!text) return "Черновик не создан: не указан текст сообщения.";
-    if (text.length > 4096) return "Черновик не создан: сообщение длиннее лимита Telegram в 4096 символов.";
+    if (!recipientQuery) return "Кому отправить сообщение?";
+    if (!text) return "Что отправить?";
+    if (text.length > 4096) return "Сообщение длиннее 4096 символов.";
 
     const client = this.requireConnected();
     const dialogs = await this.guardSession(() => client.getDialogs({ limit: MAX_SELECTED_CHATS }));
@@ -530,7 +530,7 @@ export class TelegramBridge {
     const best = matches[0];
     if (!best) {
       this.pendingOutgoingMessage = undefined;
-      return `Черновик не создан: чат «${recipientQuery}» не найден среди диалогов Telegram. Уточни имя или @username.`;
+      return `Не найден чат «${recipientQuery}». Уточните имя или @username.`;
     }
 
     const ambiguous = matches.filter(
@@ -544,7 +544,7 @@ export class TelegramBridge {
         .slice(0, 5)
         .map((candidate) => `«${candidate.title}»`)
         .join(", ");
-      return `Черновик не создан: найдено несколько похожих чатов — ${options}. Попроси пользователя уточнить получателя.`;
+      return `Найдено несколько чатов: ${options}. Кому отправить?`;
     }
 
     this.pendingOutgoingMessage = {
@@ -555,20 +555,20 @@ export class TelegramBridge {
     };
     this.lastActivity = `Подготовлен черновик для «${best.title}»`;
     const preview = speechPreview(text, 240);
-    return `Сообщение ещё НЕ отправлено. Обязательно спроси пользователя: «Отправить сообщение для ${best.title}: ${preview}?». Только после явного ответа «да» вызови confirm_telegram_message с confirmed=true; при ответе «нет» вызови его с confirmed=false.`;
+    return `Отправить в чат «${best.title}»: «${preview}»?`;
   }
 
   async confirmOutgoingMessage(confirmedValue: unknown): Promise<string> {
     this.cleanupExpired();
     const pending = this.pendingOutgoingMessage;
-    if (!pending) return "Нет подготовленного сообщения для подтверждения. Попроси пользователя повторить запрос на отправку.";
+    if (!pending) return "Нет сообщения для подтверждения.";
 
     if (confirmedValue !== true) {
       this.pendingOutgoingMessage = undefined;
       this.lastActivity = `Отправка сообщения для «${pending.recipient}» отменена`;
-      return `Отправка сообщения для ${pending.recipient} отменена.`;
+      return "Отправка отменена.";
     }
-    if (this.outgoingSendInProgress) return "Сообщение уже отправляется, повторно подтверждать не нужно.";
+    if (this.outgoingSendInProgress) return "Сообщение уже отправляется.";
 
     this.outgoingSendInProgress = true;
     try {
@@ -577,7 +577,7 @@ export class TelegramBridge {
       if (this.pendingOutgoingMessage === pending) this.pendingOutgoingMessage = undefined;
       this.lastActivity = `Сообщение отправлено в чат «${pending.recipient}»`;
       await this.log("info", `Confirmed AI-tool message sent to Telegram chat ${pending.recipient}`);
-      return `Готово, сообщение для ${pending.recipient} отправлено в Telegram.`;
+      return `Отправлено в чат «${pending.recipient}».`;
     } finally {
       this.outgoingSendInProgress = false;
     }

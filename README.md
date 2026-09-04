@@ -16,6 +16,7 @@ TG for Astra connects a personal Telegram account to Astra. The plugin monitors 
 - Text replies after a command word, for example `Astra, write I will be there soon`.
 - New Telegram messages through Astra AI tools: say, for example, `Astra, write to Andrey that I will be there soon`; Astra shows the resolved chat and draft first, then sends only after a separate confirmation.
 - A customizable phrase for tool-based sending, such as `write` or `write in Telegram`. No Astra command-editor nodes are required for this feature.
+- Concise tool responses: Astra asks only for the final send confirmation and reports only the final result, without narrating tool lookup or intermediate steps.
 
 The two-step verification password is not stored after login.
 
