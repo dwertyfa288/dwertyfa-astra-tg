@@ -10,6 +10,7 @@ export interface Preferences {
   voiceTemplate: string;
   replyWindowSeconds: number;
   replyConfirmationTemplate: string;
+  sendCommandPhrase: string;
 }
 
 export interface PersistedState {
@@ -41,6 +42,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   voiceTemplate: "Вам прислал голосовое сообщение {sender}",
   replyWindowSeconds: 300,
   replyConfirmationTemplate: "Ответ отправлен.",
+  sendCommandPhrase: "напиши",
 };
 
 export function defaultState(): PersistedState {
@@ -68,6 +70,11 @@ export function sanitizePreferences(value: Partial<Preferences> | undefined): Pr
       value?.replyConfirmationTemplate,
       DEFAULT_PREFERENCES.replyConfirmationTemplate,
       500,
+    ),
+    sendCommandPhrase: cleanText(
+      value?.sendCommandPhrase,
+      DEFAULT_PREFERENCES.sendCommandPhrase,
+      80,
     ),
   };
 }

@@ -22,6 +22,7 @@ import {
   extractReplyAfterCommandWord,
   extractSpeechText,
   isFinalSpeech,
+  matchReplyCommand,
   MAX_SELECTED_CHATS,
   MAX_VOICE_BYTES,
   type PersistedState,
@@ -52,6 +53,13 @@ interface PendingReply {
   peer: any;
   sender: string;
   chat: string;
+  expiresAt: number;
+}
+
+interface PendingOutgoingMessage {
+  peer: any;
+  recipient: string;
+  text: string;
   expiresAt: number;
 }
 
@@ -87,6 +95,8 @@ export interface PublicState {
   preferences: Preferences;
   maxSelectedChats: number;
   lastActivity: string;
+  /** Where Telegram said it put the login code, once it has said so. */
+  codeDelivery: "" | "app" | "sms" | "call";
   replyTarget: null | { sender: string; chat: string; secondsLeft: number };
 }
 
@@ -104,8 +114,13 @@ export class TelegramBridge {
   private authError = "";
   private passwordHint = "";
   private accountName = "";
+  private codeDelivery: "" | "app" | "sms" | "call" = "";
+  private loginAttempt = 0;
+  private codeWatchdog?: NodeJS.Timeout;
   private lastActivity = "Плагин запущен";
   private pendingReply?: PendingReply;
+  private pendingOutgoingMessage?: PendingOutgoingMessage;
+  private outgoingSendInProgress = false;
   private awaitingReplyText = false;
   private recentSpeech?: RecentSpeech;
   private captureRequestedUntil = 0;
@@ -177,8 +192,13 @@ export class TelegramBridge {
       },
       maxSelectedChats: MAX_SELECTED_CHATS,
       lastActivity: this.lastActivity,
+      codeDelivery: this.codeDelivery,
       replyTarget,
     };
+  }
+
+  outgoingCommandPhrase(): string {
+    return this.state.preferences.sendCommandPhrase;
   }
 
   async monitorAllChats(): Promise<{ chats: ChatInfo[]; preferences: Preferences }> {
@@ -250,48 +270,113 @@ export class TelegramBridge {
     if (!/^\+\d{7,15}$/.test(phone)) {
       throw new Error("Телефон укажите в международном формате, например +79991234567");
     }
-    if (["sending_code", "awaiting_code", "verifying_code", "awaiting_password", "verifying_password"].includes(this.authStage)) {
-      throw new Error("Вход в Telegram уже выполняется");
-    }
+
+    // Pressing the button again restarts the login rather than being refused.
+    // A first attempt that produced no code leaves this plugin sitting in
+    // `sending_code` or `awaiting_code` with nothing the user can do about it,
+    // and "вход уже выполняется" is not an answer when no code ever arrived.
+    const attempt = ++this.loginAttempt;
+    this.cancelLoginAttempt("Вход начат заново");
+
     this.lastActivity = "Получаем параметры Telegram с сервера";
     const credentials = await this.fetchTelegramCredentials();
+    if (attempt !== this.loginAttempt) return this.publicState();
 
     this.state.phone = phone;
     this.state.session = "";
     this.authError = "";
     this.passwordHint = "";
+    this.codeDelivery = "";
     this.authStage = "sending_code";
     this.sessionInvalidated = false;
     this.codeInput = undefined;
     this.passwordInput = undefined;
-    this.lastActivity = "Подключаемся к Telegram";
+    this.lastActivity = "Запрашиваем у Telegram код подтверждения";
+    this.armCodeWatchdog(attempt);
 
-    this.authTask = this.detachedScope.runInAsyncScope(() => this.performLogin(credentials, phone));
+    this.authTask = this.detachedScope.runInAsyncScope(() => this.performLogin(credentials, phone, attempt));
     void this.authTask.catch((error: unknown) => {
-      if (this.authStage !== "error") this.failAuth(error);
+      if (attempt === this.loginAttempt && this.authStage !== "error") this.failAuth(error, attempt);
     });
     return this.publicState();
   }
 
-  private async performLogin(credentials: TelegramCredentials, phone: string): Promise<void> {
+  /**
+   * Abandon whatever the previous attempt was waiting for.
+   *
+   * The deferreds are rejected rather than left hanging, so teleproto's own
+   * `signInUser` loop unwinds instead of holding a socket open behind the new
+   * attempt — two live logins on one account is how a session gets invalidated.
+   */
+  private cancelLoginAttempt(reason: string): void {
+    this.clearCodeWatchdog();
+    this.codeInput?.reject(new Error(reason));
+    this.passwordInput?.reject(new Error(reason));
+    this.codeInput = undefined;
+    this.passwordInput = undefined;
+    void this.disconnectClient();
+  }
+
+  /**
+   * Say something when Telegram never answers the code request.
+   *
+   * Without this the panel reads "Запрашиваем код" for as long as the user is
+   * willing to wait, which is indistinguishable from a code that was sent and
+   * lost.
+   */
+  private armCodeWatchdog(attempt: number): void {
+    this.clearCodeWatchdog();
+    this.codeWatchdog = setTimeout(() => {
+      this.codeWatchdog = undefined;
+      if (attempt !== this.loginAttempt || this.authStage !== "sending_code") return;
+      this.authStage = "error";
+      this.authError = "Telegram не ответил на запрос кода за 60 секунд. Проверьте соединение и попробуйте снова.";
+      this.lastActivity = this.authError;
+      void this.log("warn", "Telegram did not answer auth.sendCode within 60s");
+    }, 60_000);
+    this.codeWatchdog.unref();
+  }
+
+  private clearCodeWatchdog(): void {
+    if (this.codeWatchdog) clearTimeout(this.codeWatchdog);
+    this.codeWatchdog = undefined;
+  }
+
+  private async performLogin(
+    credentials: TelegramCredentials,
+    phone: string,
+    attempt: number,
+  ): Promise<void> {
     await this.disconnectClient();
     await this.persistState();
+    if (attempt !== this.loginAttempt) return;
     const client = this.createTelegramClient("", credentials);
     this.client = client;
     await client.connect();
+    if (attempt !== this.loginAttempt) {
+      await this.disconnectClient();
+      return;
+    }
 
     await client
       .signInUser(
         { apiId: credentials.apiId, apiHash: credentials.apiHash },
         {
           phoneNumber: phone,
-          phoneCode: async () => {
+          phoneCode: async (isCodeViaApp?: boolean) => {
+            if (attempt !== this.loginAttempt) throw new Error("Вход отменён");
+            this.clearCodeWatchdog();
+            this.codeDelivery = isCodeViaApp ? "app" : "sms";
             this.codeInput = deferred<string>();
             this.authStage = "awaiting_code";
-            this.lastActivity = "Telegram отправил код подтверждения";
+            this.lastActivity = isCodeViaApp
+              ? "Telegram отправил код в приложение Telegram на другом устройстве"
+              : `Telegram отправил код по SMS на ${phone}`;
+            await this.log("info", `Telegram sent the login code via ${isCodeViaApp ? "the Telegram app" : "SMS"}`);
             return this.codeInput.promise;
           },
           password: async (hint?: string) => {
+            if (attempt !== this.loginAttempt) throw new Error("Вход отменён");
             this.passwordHint = hint ?? "";
             this.passwordInput = deferred<string>();
             this.authStage = "awaiting_password";
@@ -302,6 +387,7 @@ export class TelegramBridge {
             throw new Error("Новый Telegram-аккаунт нужно сначала создать в официальном приложении");
           },
           onError: async (error: Error) => {
+            if (attempt !== this.loginAttempt) return true;
             const raw = errorText(error).toUpperCase();
             const canRetry = raw.includes("PHONE_CODE_INVALID") || raw.includes("PASSWORD_HASH_INVALID");
             if (canRetry) {
@@ -309,14 +395,14 @@ export class TelegramBridge {
               this.lastActivity = `Ошибка входа: ${this.authError}`;
               return false;
             }
-            this.failAuth(error);
+            this.failAuth(error, attempt);
             return true;
           },
         },
       )
       .then(async () => this.finishAuthorization(client))
       .catch((error: unknown) => {
-        if (this.authStage !== "error") this.failAuth(error);
+        if (attempt === this.loginAttempt && this.authStage !== "error") this.failAuth(error, attempt);
       });
   }
 
@@ -362,6 +448,8 @@ export class TelegramBridge {
     this.authError = "";
     this.sessionInvalidated = false;
     this.pendingReply = undefined;
+    this.pendingOutgoingMessage = undefined;
+    this.outgoingSendInProgress = false;
     this.awaitingReplyText = false;
     this.recentSpeech = undefined;
     this.captureRequestedUntil = 0;
@@ -401,6 +489,98 @@ export class TelegramBridge {
       selectedChatIds: [...preferences.selectedChatIds],
       selectedChatNames: { ...preferences.selectedChatNames },
     };
+  }
+
+  /**
+   * Resolve an explicitly requested Telegram recipient and create a short-lived
+   * draft. This method never sends: the second tool must receive a separate,
+   * explicit confirmation from the user before `confirmOutgoingMessage` can do
+   * any Telegram write.
+   */
+  async prepareOutgoingMessage(
+    requestValue: unknown,
+    recipientValue: unknown,
+    messageValue: unknown,
+  ): Promise<string> {
+    const request = String(requestValue ?? "").trim();
+    const recipientQuery = String(recipientValue ?? "").trim();
+    const text = String(messageValue ?? "").trim();
+    const commandPhrase = this.state.preferences.sendCommandPhrase;
+
+    if (matchReplyCommand(request, commandPhrase).kind === "none") {
+      this.pendingOutgoingMessage = undefined;
+      return `Черновик не создан: запрос должен начинаться с настроенной фразы «${commandPhrase}».`;
+    }
+    if (!recipientQuery) return "Черновик не создан: не указан получатель Telegram.";
+    if (!text) return "Черновик не создан: не указан текст сообщения.";
+    if (text.length > 4096) return "Черновик не создан: сообщение длиннее лимита Telegram в 4096 символов.";
+
+    const client = this.requireConnected();
+    const dialogs = await this.guardSession(() => client.getDialogs({ limit: MAX_SELECTED_CHATS }));
+    const matches = dialogs
+      .filter((dialog: any) => Boolean(dialog?.inputEntity))
+      .map((dialog: any) => ({
+        dialog,
+        title: dialogTitle(dialog),
+        score: scoreTelegramRecipient(recipientQuery, dialog),
+      }))
+      .filter((candidate) => candidate.score >= 70)
+      .sort((left, right) => right.score - left.score || left.title.localeCompare(right.title, "ru"));
+
+    const best = matches[0];
+    if (!best) {
+      this.pendingOutgoingMessage = undefined;
+      return `Черновик не создан: чат «${recipientQuery}» не найден среди диалогов Telegram. Уточни имя или @username.`;
+    }
+
+    const ambiguous = matches.filter(
+      (candidate) => candidate !== best && (
+        candidate.score === best.score || (best.score < 100 && best.score - candidate.score <= 2)
+      ),
+    );
+    if (ambiguous.length) {
+      this.pendingOutgoingMessage = undefined;
+      const options = [best, ...ambiguous]
+        .slice(0, 5)
+        .map((candidate) => `«${candidate.title}»`)
+        .join(", ");
+      return `Черновик не создан: найдено несколько похожих чатов — ${options}. Попроси пользователя уточнить получателя.`;
+    }
+
+    this.pendingOutgoingMessage = {
+      peer: best.dialog.inputEntity,
+      recipient: best.title,
+      text,
+      expiresAt: Date.now() + 2 * 60_000,
+    };
+    this.lastActivity = `Подготовлен черновик для «${best.title}»`;
+    const preview = speechPreview(text, 240);
+    return `Сообщение ещё НЕ отправлено. Обязательно спроси пользователя: «Отправить сообщение для ${best.title}: ${preview}?». Только после явного ответа «да» вызови confirm_telegram_message с confirmed=true; при ответе «нет» вызови его с confirmed=false.`;
+  }
+
+  async confirmOutgoingMessage(confirmedValue: unknown): Promise<string> {
+    this.cleanupExpired();
+    const pending = this.pendingOutgoingMessage;
+    if (!pending) return "Нет подготовленного сообщения для подтверждения. Попроси пользователя повторить запрос на отправку.";
+
+    if (confirmedValue !== true) {
+      this.pendingOutgoingMessage = undefined;
+      this.lastActivity = `Отправка сообщения для «${pending.recipient}» отменена`;
+      return `Отправка сообщения для ${pending.recipient} отменена.`;
+    }
+    if (this.outgoingSendInProgress) return "Сообщение уже отправляется, повторно подтверждать не нужно.";
+
+    this.outgoingSendInProgress = true;
+    try {
+      const client = this.requireConnected();
+      await this.guardSession(() => client.sendMessage(pending.peer, { message: pending.text }));
+      if (this.pendingOutgoingMessage === pending) this.pendingOutgoingMessage = undefined;
+      this.lastActivity = `Сообщение отправлено в чат «${pending.recipient}»`;
+      await this.log("info", `Confirmed AI-tool message sent to Telegram chat ${pending.recipient}`);
+      return `Готово, сообщение для ${pending.recipient} отправлено в Telegram.`;
+    } finally {
+      this.outgoingSendInProgress = false;
+    }
   }
 
   async playVoice(voiceIdValue: unknown): Promise<string> {
@@ -583,6 +763,7 @@ export class TelegramBridge {
 
   private async finishAuthorization(client: TelegramClient): Promise<void> {
     if (this.client !== client) return;
+    this.clearCodeWatchdog();
     this.state.session = String(client.session.save());
     const me: any = await client.getMe();
     this.accountName = displayName(me, this.state.phone);
@@ -684,6 +865,8 @@ export class TelegramBridge {
     this.authError = invalidatedSessionMessage(code);
     this.lastActivity = this.authError;
     this.pendingReply = undefined;
+    this.pendingOutgoingMessage = undefined;
+    this.outgoingSendInProgress = false;
     this.awaitingReplyText = false;
     this.recentSpeech = undefined;
     this.captureRequestedUntil = 0;
@@ -900,7 +1083,9 @@ export class TelegramBridge {
     }
   }
 
-  private failAuth(error: unknown): void {
+  private failAuth(error: unknown, attempt?: number): void {
+    if (attempt !== undefined && attempt !== this.loginAttempt) return;
+    this.clearCodeWatchdog();
     this.authStage = "error";
     this.authError = friendlyTelegramError(error);
     this.lastActivity = `Ошибка входа: ${this.authError}`;
@@ -938,6 +1123,10 @@ export class TelegramBridge {
       this.awaitingReplyText = false;
       this.recentSpeech = undefined;
       this.captureRequestedUntil = 0;
+    }
+    if (this.pendingOutgoingMessage && this.pendingOutgoingMessage.expiresAt <= now) {
+      this.pendingOutgoingMessage = undefined;
+      this.outgoingSendInProgress = false;
     }
     for (const [id, item] of this.voiceItems) {
       if (now - item.createdAt > 10 * 60_000) this.voiceItems.delete(id);
@@ -1171,6 +1360,80 @@ function displayName(entity: any, fallback: string): string {
   return String(fullName || entity.title || entity.username || fallback);
 }
 
+function dialogTitle(dialog: any): string {
+  return String(
+    dialog?.title ||
+    dialog?.name ||
+    displayName(dialog?.entity, "Без названия"),
+  ).trim() || "Без названия";
+}
+
+function scoreTelegramRecipient(queryValue: string, dialog: any): number {
+  const query = normalizeRecipient(queryValue);
+  if (!query) return 0;
+
+  const entity = dialog?.entity;
+  const fullName = [entity?.firstName, entity?.lastName].filter(Boolean).join(" ").trim();
+  const username = String(entity?.username || "").trim();
+  const aliases = [dialogTitle(dialog), dialog?.name, fullName, entity?.firstName, entity?.lastName, username]
+    .map((value) => normalizeRecipient(String(value || "")))
+    .filter(Boolean);
+
+  let best = 0;
+  for (const alias of new Set(aliases)) {
+    if (alias === query) {
+      best = Math.max(best, normalizeRecipient(username) === query ? 110 : 100);
+      continue;
+    }
+    if (alias.startsWith(query) || query.startsWith(alias)) best = Math.max(best, 88);
+    if (alias.includes(query) || query.includes(alias)) best = Math.max(best, 80);
+
+    const longest = Math.max(alias.length, query.length);
+    if (longest > 0) {
+      const similarity = 1 - levenshteinDistance(alias, query) / longest;
+      if (similarity >= 0.72) best = Math.max(best, Math.round(60 + similarity * 25));
+    }
+  }
+  return best;
+}
+
+function normalizeRecipient(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase("ru-RU")
+    .replaceAll("ё", "е")
+    .replace(/^@/u, "")
+    .replace(/[^\p{L}\p{N}_]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function levenshteinDistance(left: string, right: string): number {
+  if (left === right) return 0;
+  if (!left.length) return right.length;
+  if (!right.length) return left.length;
+
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const current = [leftIndex];
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const substitution = previous[rightIndex - 1] + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1);
+      current[rightIndex] = Math.min(
+        current[rightIndex - 1] + 1,
+        previous[rightIndex] + 1,
+        substitution,
+      );
+    }
+    previous = current;
+  }
+  return previous[right.length];
+}
+
+function speechPreview(value: string, maxLength: number): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length <= maxLength ? compact : `${compact.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
 function friendlyTelegramError(error: unknown): string {
   const raw = errorText(error);
   const upper = raw.toUpperCase();
@@ -1179,11 +1442,27 @@ function friendlyTelegramError(error: unknown): string {
   if (upper.includes("PASSWORD_HASH_INVALID")) return "Неверный пароль двухэтапной аутентификации";
   if (upper.includes("PHONE_NUMBER_INVALID")) return "Telegram не принял этот номер телефона";
   if (upper.includes("API_ID_INVALID")) return "Telegram не принял API ID или API Hash";
+  const flood = /FLOOD_WAIT_(\d+)/.exec(upper);
+  if (flood) return `Telegram ограничил частые входы: следующая попытка через ${formatWait(Number(flood[1]))}`;
   if (upper.includes("FLOOD_WAIT")) return "Telegram временно ограничил частые попытки входа; попробуйте позже";
+  if (upper.includes("PHONE_NUMBER_BANNED")) return "Telegram заблокировал этот номер";
+  if (upper.includes("SEND_CODE_UNAVAILABLE")) {
+    return "Telegram отказался присылать код на этот номер сейчас — попробуйте позже или войдите в официальном приложении";
+  }
+  if (upper.includes("PHONE_PASSWORD_FLOOD")) return "Слишком много попыток входа; Telegram просит подождать";
+  if (upper.includes("AUTH_RESTART")) return "Telegram просит начать вход заново — нажмите «Продолжить» ещё раз";
   if (upper.includes("AUTH_USER_CANCEL")) return "Вход отменён";
   const invalidation = sessionInvalidationCode(raw);
   if (invalidation) return invalidatedSessionMessage(invalidation);
   return raw;
+}
+
+function formatWait(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "несколько секунд";
+  if (seconds < 60) return `${Math.ceil(seconds)} сек.`;
+  const minutes = Math.ceil(seconds / 60);
+  if (minutes < 60) return `${minutes} мин.`;
+  return `${Math.ceil(minutes / 60)} ч.`;
 }
 
 /**

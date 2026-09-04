@@ -1,7 +1,7 @@
 [plugin]
 id = "dwertyfa-astra-tg"
 name = "TG for Astra"
-version = "0.1.12"
+version = "0.1.13"
 description = "Announce selected Telegram chats with Astra and send voice-dictated replies"
 author = "dwertyfa"
 license = "MIT"
@@ -14,6 +14,7 @@ runtimes = ["node"]
 
 # `[capabilities]` is what the daemon may call INTO this plugin.
 [capabilities]
+tools = true
 actions = true
 triggers = true
 ui_contributions = true

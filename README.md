@@ -14,6 +14,8 @@ TG for Astra connects a personal Telegram account to Astra. The plugin monitors 
 - Playback of Telegram voice messages in their original audio.
 - Automatic transport selection: Telegram WSS first, followed by a fallback WSS relay.
 - Text replies after a command word, for example `Astra, write I will be there soon`.
+- New Telegram messages through Astra AI tools: say, for example, `Astra, write to Andrey that I will be there soon`; Astra shows the resolved chat and draft first, then sends only after a separate confirmation.
+- A customizable phrase for tool-based sending, such as `write` or `write in Telegram`. No Astra command-editor nodes are required for this feature.
 
 The two-step verification password is not stored after login.
 

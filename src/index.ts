@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { action, plugin, s, UiContrib } from "astra-plugin-sdk";
+import { action, plugin, s, tool, UiContrib } from "astra-plugin-sdk";
 
 import { extractSpeechText, isFinalSpeech } from "./model";
 import { TelegramBridge } from "./telegram-bridge";
@@ -16,6 +16,42 @@ export const bridge = new TelegramBridge(statePath);
 
 export const app = plugin({
   id: "dwertyfa-astra-tg",
+
+  tools: {
+    prepare_telegram_message: tool({
+      get description() {
+        return `Подготовить, но не отправлять сообщение в Telegram, только когда реплика пользователя после слова «Астра» начинается с настроенной фразы «${bridge.outgoingCommandPhrase()}»; вернёт обязательный вопрос подтверждения.`;
+      },
+      input: s.object({
+        request_text: s.string({
+          description: "Полная исходная реплика пользователя дословно, включая фразу вроде «напиши»; не пересказывай и не сокращай её",
+          minLength: 1,
+          maxLength: 6000,
+        }),
+        recipient: s.string({
+          description: "Имя получателя, название Telegram-чата или @username без слов команды и без текста сообщения",
+          minLength: 1,
+          maxLength: 160,
+        }),
+        message: s.string({
+          description: "Только текст, который пользователь просит отправить",
+          minLength: 1,
+          maxLength: 4096,
+        }),
+      }),
+      run: ({ request_text, recipient, message }) =>
+        bridge.prepareOutgoingMessage(request_text, recipient, message),
+    }),
+    confirm_telegram_message: tool({
+      description: "Подтвердить или отменить последний подготовленный Telegram-черновик; вызывай только отдельным следующим ходом после вопроса пользователю и его явного ответа «да» или «нет», никогда не подтверждай в том же ходе, где создан черновик.",
+      input: s.object({
+        confirmed: s.boolean({
+          description: "true только при явном согласии пользователя отправить показанный черновик; false при отказе",
+        }),
+      }),
+      run: ({ confirmed }) => bridge.confirmOutgoingMessage(confirmed),
+    }),
+  },
 
   actions: {
     capture_reply_command: action({

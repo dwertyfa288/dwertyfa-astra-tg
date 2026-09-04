@@ -498,6 +498,7 @@
     .toggle input:checked + .switch::after { transform: translateX(19px); background: white; box-shadow: 0 2px 9px rgba(0,0,0,.32), 0 0 10px rgba(255,255,255,.45); }
     .template-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .reply-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 12px; margin-top: 14px; }
+    .tool-send-field { margin-top: 14px; }
     .time-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
     .variables { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; color: #6f6c7e; font-size: 10px; }
     .code { display: inline-flex; align-items: center; min-height: 21px; padding: 2px 7px; border: 1px solid rgba(139,92,246,.15); border-radius: 7px; background: rgba(139,92,246,.065); color: #bda9ff; font: 10px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace; }
@@ -654,10 +655,10 @@
         </div>
         <div id="accountLogin">
           <div class="fields">
-            <div class="field full"><label class="field-label" for="phone">Номер телефона <span class="field-note">Международный формат</span></label><input id="phone" autocomplete="tel" placeholder="+7 999 123-45-67"><p class="hint">API-параметры и защищённое подключение настраиваются автоматически — вам нужен только номер.</p></div>
+            <div class="field full"><label class="field-label" for="phone">Номер телефона <span class="field-note">Международный формат</span></label><input id="phone" autocomplete="tel" placeholder="+7 999 123-45-67"><p class="hint">Если Telegram уже открыт на телефоне или другом устройстве, код придёт <b>в сам Telegram</b> — в чат «Telegram», а не по SMS.</p></div>
           </div>
           <div class="actions"><button id="sendCodeBtn" class="primary">Продолжить<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M14 7l5 5-5 5"/></svg></button></div>
-          <div id="codeBlock" class="auth-stage" hidden><div class="field"><label class="field-label" for="code">Код из Telegram <span class="field-note">Одноразовый</span></label><input id="code" inputmode="numeric" autocomplete="one-time-code" placeholder="•••••"></div><div class="actions"><button id="codeBtn" class="primary">Подтвердить код</button></div></div>
+          <div id="codeBlock" class="auth-stage" hidden><div class="field"><label class="field-label" for="code">Код из Telegram <span class="field-note">Одноразовый</span></label><input id="code" inputmode="numeric" autocomplete="one-time-code" placeholder="•••••"></div><p id="codeHint" class="hint"></p><div class="actions"><button id="codeBtn" class="primary">Подтвердить код</button><button id="resendBtn">Запросить код заново</button></div></div>
           <div id="passwordBlock" class="auth-stage" hidden><div class="field"><label class="field-label" for="password">Пароль 2FA <span class="field-note">Не сохраняется</span></label><input id="password" type="password" autocomplete="current-password" placeholder="Пароль двухэтапной защиты"></div><div id="passwordHint" class="hint"></div><div class="actions"><button id="passwordBtn" class="primary">Войти в аккаунт</button></div></div>
           <div id="authError" class="error"></div>
         </div>
@@ -676,7 +677,7 @@
 
       <section class="card settings-card wide" style="--delay:.26s">
         <div class="card-head">
-          <div class="section-title"><span class="section-index">03</span><div><h2>Озвучивание и быстрый ответ</h2><p class="subtitle">Настройте анонсы, подтверждение и окно ответа</p></div></div>
+          <div class="section-title"><span class="section-index">03</span><div><h2>Озвучивание и быстрый ответ</h2><p class="subtitle">Настройте анонсы, ответы и отправку через AI tools</p></div></div>
           <span class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55"><path d="M12 3a4 4 0 0 0-4 4v5a4 4 0 0 0 8 0V7a4 4 0 0 0-4-4Z"/><path d="M5 11.5a7 7 0 0 0 14 0M12 18.5V22M8.5 22h7"/></svg></span>
         </div>
         <div class="monitor-row"><div class="monitor-copy"><strong>Фоновый мониторинг</strong><span>Плагин реагирует только на выбранные выше чаты</span></div><label class="toggle" aria-label="Мониторинг включён"><input id="enabled" type="checkbox"><span class="switch"></span></label></div>
@@ -689,6 +690,7 @@
           <div class="field"><label class="field-label" for="replyWindow">Окно ответа <span class="field-note">Сек.</span></label><input id="replyWindow" type="number" min="10" max="3600"><p class="hint">Командное слово задаётся только в текстовом триггере Astra. Например: «Астра, напиши привет».</p></div>
           <div class="field"><label class="field-label" for="replyConfirmationTemplate">После отправки ответа <span class="field-note">Голос Astra</span></label><textarea id="replyConfirmationTemplate" placeholder="Ответ отправлен."></textarea><p class="hint">Что Astra скажет после успешной отправки в Telegram. Можно использовать {sender}, {chat} и {message}; оставьте поле пустым, чтобы ничего не произносить.</p></div>
         </div>
+        <div class="field tool-send-field"><label class="field-label" for="sendCommandPhrase">Фраза для отправки <span class="field-note">AI tool</span></label><input id="sendCommandPhrase" maxlength="80" placeholder="напиши"><p class="hint">С этой фразы должен начинаться запрос, например: «Астра, напиши Андрюхе, что буду через час». Можно заменить на «напиши в Телеграме» или другую фразу. Astra найдёт чат, покажет черновик и отправит его только после отдельного подтверждения.</p></div>
         <div class="actions"><button id="saveSettingsBtn" class="primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 4h12l2 2v14H5V4Z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg>Сохранить настройки</button></div>
         <p id="activity" class="activity">Ожидаем состояние плагина</p>
       </section>
@@ -848,6 +850,7 @@
       $('phone').value ||= next.phone || '';
       $('authError').textContent = next.authError || '';
       $('codeBlock').hidden = next.authStage !== 'awaiting_code';
+      $('codeHint').textContent = codeHint(next);
       $('passwordBlock').hidden = next.authStage !== 'awaiting_password';
       $('passwordHint').textContent = next.passwordHint ? 'Подсказка Telegram: ' + next.passwordHint : '';
       $('maxChats').textContent = next.maxSelectedChats;
@@ -863,6 +866,7 @@
         $('voiceTemplate').value = p.voiceTemplate;
         $('replyWindow').value = p.replyWindowSeconds;
         $('replyConfirmationTemplate').value = p.replyConfirmationTemplate;
+        $('sendCommandPhrase').value = p.sendCommandPhrase;
       }
 
       $('activity').textContent = next.lastActivity + (next.replyTarget ? ' · Ответ для «' + next.replyTarget.chat + '» доступен ещё ' + next.replyTarget.secondsLeft + ' сек.' : '');
@@ -954,6 +958,15 @@
       return ({logged_out:'Telegram не подключён',restoring:'Восстанавливаем сессию',sending_code:'Отправляем код',awaiting_code:'Ждём код Telegram',verifying_code:'Проверяем код',awaiting_password:'Нужен пароль 2FA',verifying_password:'Проверяем пароль',error:'Ошибка подключения'})[stage] || 'Telegram';
     }
 
+    function codeHint(next) {
+      if (next.codeDelivery === 'app') {
+        return 'Код отправлен в приложение Telegram на устройстве, где вы уже вошли — ищите чат «Telegram». По SMS он в этом случае не приходит.';
+      }
+      if (next.codeDelivery === 'sms') return 'Код отправлен по SMS на ' + (next.phone || 'указанный номер') + '.';
+      if (next.codeDelivery === 'call') return 'Telegram позвонит и продиктует код.';
+      return '';
+    }
+
     function escapeHtml(text) {
       const node = document.createElement('span');
       node.textContent = String(text || '');
@@ -1012,10 +1025,12 @@
         enabled: $('enabled').checked,
         selectedChatIds: [...selected],
         selectedChatNames: selectedChatNames(),
+        hideIdentity: privacyHidden,
         textTemplate: $('textTemplate').value,
         voiceTemplate: $('voiceTemplate').value,
         replyWindowSeconds: Number($('replyWindow').value),
         replyConfirmationTemplate: $('replyConfirmationTemplate').value,
+        sendCommandPhrase: $('sendCommandPhrase').value,
       };
       const result = await api('savePreferences', body);
       selectionDirty = false;
@@ -1035,7 +1050,17 @@
       return names;
     }
 
-    $('sendCodeBtn').onclick = async () => { const button=$('sendCodeBtn'); setBusy(button,true); try { const result=await api('beginLogin',{phone:$('phone').value}); renderState(result.state); } catch(error){toast(error.message,true);} finally{setBusy(button,false);} };
+    $('sendCodeBtn').onclick = async () => { const button=$('sendCodeBtn'); setBusy(button,true); try { const result=await api('beginLogin',{phone:$('phone').value},30000); renderState(result.state); } catch(error){toast(error.message,true);} finally{setBusy(button,false);} };
+    $('resendBtn').onclick = async () => {
+      const button=$('resendBtn');
+      setBusy(button,true);
+      try {
+        const result=await api('beginLogin',{phone:$('phone').value || (state && state.phone) || ''},30000);
+        $('code').value='';
+        renderState(result.state);
+        toast('Запросили код заново');
+      } catch(error){toast(error.message,true);} finally{setBusy(button,false);}
+    };
     $('codeBtn').onclick = async () => { const button=$('codeBtn'); setBusy(button,true); try { const result=await api('submitCode',{code:$('code').value}); $('code').value=''; renderState(result.state); } catch(error){toast(error.message,true);} finally{setBusy(button,false);} };
     $('passwordBtn').onclick = async () => { const button=$('passwordBtn'); setBusy(button,true); try { const result=await api('submitPassword',{password:$('password').value}); $('password').value=''; renderState(result.state); } catch(error){toast(error.message,true);} finally{setBusy(button,false);} };
     $('logoutBtn').onclick = async () => {
@@ -1107,7 +1132,7 @@
     $('chatSearch').oninput = renderChats;
     $('chatList').addEventListener('change', onChatToggle);
     document.querySelectorAll('[data-copy]').forEach((button) => button.addEventListener('click', () => copyValue(button)));
-    ['enabled','textTemplate','voiceTemplate','replyWindow','replyConfirmationTemplate'].forEach((id) => $(id).addEventListener('input', () => { settingsDirty = true; }));
+    ['enabled','textTemplate','voiceTemplate','replyWindow','replyConfirmationTemplate','sendCommandPhrase'].forEach((id) => $(id).addEventListener('input', () => { settingsDirty = true; }));
     renderIdentity();
     refresh();
     setInterval(refresh, 2500);

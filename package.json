@@ -1,6 +1,6 @@
 {
   "name": "dwertyfa-astra-tg",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Monitor selected Telegram chats, announce messages with Astra, and reply by voice",
   "main": "dist/index.js",
   "scripts": {
