@@ -1,3 +1,9 @@
+import {
+  type AutoReplyCampaign,
+  type AutoReplyRule,
+  normalizeAutoReplyRules,
+} from "./auto-responder";
+
 export const MAX_SELECTED_CHATS = 1000;
 export const MAX_VOICE_BYTES = 20 * 1024 * 1024;
 
@@ -11,13 +17,19 @@ export interface Preferences {
   replyWindowSeconds: number;
   replyConfirmationTemplate: string;
   sendCommandPhrase: string;
+  broadcastCommandPhrase: string;
+  broadcastDelayMinSeconds: number;
+  broadcastDelayMaxSeconds: number;
+  autoResponderEnabled: boolean;
+  autoReplyRules: AutoReplyRule[];
 }
 
 export interface PersistedState {
-  schemaVersion: 2;
+  schemaVersion: 3;
   phone: string;
   session: string;
   preferences: Preferences;
+  autoReplyCampaign?: AutoReplyCampaign;
 }
 
 export interface ChatInfo {
@@ -43,11 +55,16 @@ export const DEFAULT_PREFERENCES: Preferences = {
   replyWindowSeconds: 300,
   replyConfirmationTemplate: "Ответ отправлен.",
   sendCommandPhrase: "напиши",
+  broadcastCommandPhrase: "разошли",
+  broadcastDelayMinSeconds: 3,
+  broadcastDelayMaxSeconds: 7,
+  autoResponderEnabled: false,
+  autoReplyRules: [],
 };
 
 export function defaultState(): PersistedState {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     phone: "",
     session: "",
     preferences: { ...DEFAULT_PREFERENCES, selectedChatIds: [], selectedChatNames: {} },
@@ -58,6 +75,18 @@ export function sanitizePreferences(value: Partial<Preferences> | undefined): Pr
   const selected = Array.isArray(value?.selectedChatIds)
     ? [...new Set(value.selectedChatIds.map(String))].slice(0, MAX_SELECTED_CHATS)
     : [];
+  const requestedBroadcastDelayMin = clampInteger(
+    value?.broadcastDelayMinSeconds,
+    1,
+    60,
+    DEFAULT_PREFERENCES.broadcastDelayMinSeconds,
+  );
+  const requestedBroadcastDelayMax = clampInteger(
+    value?.broadcastDelayMaxSeconds,
+    1,
+    60,
+    DEFAULT_PREFERENCES.broadcastDelayMaxSeconds,
+  );
   return {
     enabled: value?.enabled !== false,
     selectedChatIds: selected,
@@ -76,6 +105,15 @@ export function sanitizePreferences(value: Partial<Preferences> | undefined): Pr
       DEFAULT_PREFERENCES.sendCommandPhrase,
       80,
     ),
+    broadcastCommandPhrase: cleanText(
+      value?.broadcastCommandPhrase,
+      DEFAULT_PREFERENCES.broadcastCommandPhrase,
+      80,
+    ),
+    broadcastDelayMinSeconds: Math.min(requestedBroadcastDelayMin, requestedBroadcastDelayMax),
+    broadcastDelayMaxSeconds: Math.max(requestedBroadcastDelayMin, requestedBroadcastDelayMax),
+    autoResponderEnabled: value?.autoResponderEnabled === true,
+    autoReplyRules: normalizeAutoReplyRules(value?.autoReplyRules),
   };
 }
 

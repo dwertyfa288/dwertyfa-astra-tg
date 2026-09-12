@@ -9,3 +9,5 @@ telegram-state.json
 telegram-state.json.tmp
 .sdk-reference/
 .tooling/
+/tests/
+/docs/

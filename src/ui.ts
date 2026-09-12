@@ -1,3 +1,34 @@
+export interface UiAutoReplyRule {
+  id: string;
+  triggers: string[];
+  response: string;
+}
+
+export function consumeAutoReplyTriggerInput(
+  value: string,
+  commitAll: boolean,
+): { committed: string[]; remainder: string } {
+  const parts = value.split(",");
+  const shouldCommit = commitAll ? parts : parts.slice(0, -1);
+  const committed = shouldCommit
+    .map((part) => part.trim().replace(/\s+/gu, " ").slice(0, 300))
+    .filter(Boolean);
+  const remainder = commitAll ? "" : String(parts.at(-1) ?? "").slice(0, 300);
+  return { committed, remainder };
+}
+
+export function validateAutoReplyRulesForSave(
+  enabled: boolean,
+  rules: UiAutoReplyRule[],
+): string {
+  if (!enabled) return "";
+  if (!rules.length) return "Добавьте хотя бы одно правило автоответчика";
+  if (rules.some((rule) => !rule.triggers.length || !rule.response.trim())) {
+    return "Заполните триггеры и ответ во всех правилах автоответчика";
+  }
+  return "";
+}
+
 export function renderAppHtml(): string {
   return String.raw`<!doctype html>
 <html lang="ru">
@@ -500,6 +531,123 @@ export function renderAppHtml(): string {
     .template-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .reply-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 12px; margin-top: 14px; }
     .tool-send-field { margin-top: 14px; }
+    .broadcast-panel {
+      position: relative;
+      margin-top: 14px;
+      padding: 15px;
+      overflow: hidden;
+      border: 1px solid rgba(139,92,246,.18);
+      border-radius: 16px;
+      background:
+        linear-gradient(135deg, rgba(139,92,246,.085), rgba(72,168,255,.04) 56%, rgba(92,225,230,.035)),
+        rgba(8,8,14,.34);
+      box-shadow: inset 0 1px rgba(255,255,255,.035);
+    }
+    .broadcast-panel::after {
+      content: "";
+      position: absolute;
+      width: 150px;
+      height: 150px;
+      top: -105px;
+      right: -60px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(139,92,246,.18), transparent 68%);
+      pointer-events: none;
+      animation: breathe 3.6s ease-in-out infinite;
+    }
+    .broadcast-head { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 13px; }
+    .broadcast-title { display: flex; align-items: center; gap: 9px; color: #e2dcff; font-size: 12px; font-weight: 720; }
+    .broadcast-title svg { width: 17px; height: 17px; color: #ab94ff; }
+    .broadcast-badge { padding: 3px 7px; border: 1px solid rgba(92,225,230,.16); border-radius: 999px; background: rgba(92,225,230,.065); color: #8ee5e2; font-size: 9px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .broadcast-grid { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0,1.5fr) minmax(105px,.5fr) minmax(105px,.5fr); gap: 10px; }
+    .broadcast-status {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      padding: 9px 11px;
+      border: 1px solid rgba(88,223,165,.14);
+      border-radius: 11px;
+      background: rgba(88,223,165,.055);
+      color: #a8ddc4;
+      font-size: 11px;
+    }
+    .broadcast-status::before { content: ""; width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--success); box-shadow: 0 0 12px rgba(88,223,165,.6); }
+    .broadcast-status.sending { border-color: rgba(72,168,255,.18); background: rgba(72,168,255,.06); color: #add8f8; }
+    .broadcast-status.sending::before { background: var(--blue); box-shadow: 0 0 0 4px rgba(72,168,255,.09), 0 0 15px rgba(72,168,255,.7); animation: pulse 1.4s ease-out infinite; }
+    .broadcast-status.failed { border-color: rgba(255,199,107,.2); background: rgba(255,199,107,.06); color: #f1d29d; }
+    .broadcast-status.failed::before { background: var(--warning); box-shadow: 0 0 12px rgba(255,199,107,.55); }
+    .auto-responder {
+      position: relative;
+      z-index: 1;
+      margin-top: 14px;
+      padding: 14px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,.085);
+      border-radius: 15px;
+      background: linear-gradient(145deg, rgba(255,255,255,.035), transparent 46%), rgba(6,7,14,.38);
+      transition: border-color .3s ease, background .3s ease, box-shadow .3s ease;
+    }
+    .auto-responder::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 2px;
+      opacity: .35;
+      background: linear-gradient(transparent, var(--violet-bright), var(--cyan), transparent);
+      transition: opacity .3s ease, box-shadow .3s ease;
+    }
+    .auto-responder.enabled { border-color: rgba(139,92,246,.22); background: linear-gradient(145deg, rgba(139,92,246,.06), rgba(92,225,230,.025)), rgba(6,7,14,.42); box-shadow: inset 0 1px rgba(255,255,255,.035), 0 18px 50px rgba(12,8,32,.15); }
+    .auto-responder.enabled::before { opacity: .9; box-shadow: 0 0 18px rgba(139,92,246,.48); }
+    .auto-responder-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .auto-responder-copy { min-width: 0; }
+    .auto-responder-copy strong { display: flex; align-items: center; gap: 8px; color: #ded9ed; font-size: 12px; }
+    .auto-responder-copy strong::before { content: ""; width: 8px; height: 8px; border-radius: 3px; background: linear-gradient(145deg, var(--violet-bright), var(--blue)); box-shadow: 0 0 14px rgba(139,92,246,.48); transform: rotate(45deg); }
+    .auto-responder-copy span { display: block; max-width: 700px; margin-top: 3px; color: #777486; font-size: 10px; }
+    .auto-responder-status { display: inline-flex; align-items: center; gap: 7px; margin-top: 11px; padding: 6px 9px; border: 1px solid rgba(255,255,255,.08); border-radius: 9px; background: rgba(255,255,255,.025); color: #858193; font-size: 10px; transition: all .3s ease; }
+    .auto-responder-status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #5e5a69; }
+    .auto-responder-status.waiting { color: #d5c4ff; border-color: rgba(139,92,246,.18); background: rgba(139,92,246,.055); }
+    .auto-responder-status.waiting::before { background: var(--violet-bright); box-shadow: 0 0 10px rgba(167,139,250,.55); animation: breathe 1.8s ease-in-out infinite; }
+    .auto-responder-status.active { color: #a7ead0; border-color: rgba(88,223,165,.18); background: rgba(88,223,165,.055); }
+    .auto-responder-status.active::before { background: var(--success); box-shadow: 0 0 12px rgba(88,223,165,.65); animation: pulse 2s ease-out infinite; }
+    .auto-rule-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 13px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.06); }
+    .auto-rule-toolbar span { color: #777486; font-size: 10px; }
+    .add-rule { min-height: 32px; padding: 6px 10px; color: #cabaff; border-color: rgba(139,92,246,.2); background: rgba(139,92,246,.07); }
+    .add-rule svg { width: 14px; height: 14px; }
+    .auto-rule-list { display: grid; gap: 9px; margin-top: 10px; }
+    .auto-rule-empty { padding: 18px 14px; border: 1px dashed rgba(255,255,255,.09); border-radius: 12px; color: #6f6c7e; text-align: center; font-size: 10px; }
+    .auto-rule-card {
+      position: relative;
+      padding: 12px;
+      border: 1px solid rgba(255,255,255,.085);
+      border-radius: 13px;
+      background: linear-gradient(145deg, rgba(255,255,255,.035), transparent), rgba(13,13,23,.54);
+      box-shadow: inset 0 1px rgba(255,255,255,.025);
+      animation: ruleEnter .36s calc(var(--rule-index, 0) * 35ms) cubic-bezier(.2,.8,.2,1) both;
+      transition: border-color .25s ease, transform .25s ease, box-shadow .25s ease;
+    }
+    .auto-rule-card:hover { border-color: rgba(139,92,246,.2); transform: translateY(-1px); box-shadow: inset 0 1px rgba(255,255,255,.035), 0 12px 32px rgba(0,0,0,.14); }
+    .auto-rule-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
+    .auto-rule-number { display: inline-flex; align-items: center; gap: 7px; color: #a9a4b7; font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+    .auto-rule-number i { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid rgba(139,92,246,.18); border-radius: 8px; background: rgba(139,92,246,.07); color: #bca8ff; font-style: normal; font-size: 9px; }
+    .rule-delete { width: 28px; height: 28px; padding: 0; color: #817c8d; border-color: transparent; background: transparent; }
+    .rule-delete:hover { color: #ff9bab; border-color: rgba(255,113,133,.16); background: rgba(255,113,133,.07); }
+    .rule-delete svg { width: 14px; height: 14px; }
+    .auto-rule-fields { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px; }
+    .trigger-editor { min-height: 72px; padding: 8px; border: 1px solid var(--stroke-strong); border-radius: var(--radius-control); background: color-mix(in srgb, var(--surface-strong) 80%, transparent); transition: border-color .25s ease, box-shadow .25s ease; }
+    .trigger-editor:focus-within { border-color: rgba(139,92,246,.55); box-shadow: 0 0 0 3px rgba(139,92,246,.095), 0 8px 24px rgba(0,0,0,.12); }
+    .trigger-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .trigger-chip { display: inline-flex; align-items: center; max-width: 100%; border: 1px solid rgba(139,92,246,.2); border-radius: 8px; background: linear-gradient(135deg, rgba(139,92,246,.13), rgba(72,168,255,.065)); color: #cbbcff; box-shadow: inset 0 1px rgba(255,255,255,.04); animation: chipIn .24s cubic-bezier(.2,.8,.2,1) both; }
+    .trigger-chip-edit { min-width: 0; max-width: 100%; padding: 5px 4px 5px 8px; overflow: hidden; border: 0; border-radius: 8px 0 0 8px; background: transparent; color: inherit; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .trigger-chip-remove { width: 24px; min-height: 24px; padding: 0; border: 0; border-radius: 0 8px 8px 0; background: transparent; color: #8f83ab; font-size: 14px; }
+    .trigger-chip-remove:hover { background: rgba(255,113,133,.09); color: #ff9cac; }
+    .trigger-input { width: 100%; min-height: 28px; margin-top: 6px; padding: 4px 3px; border: 0; outline: 0; background: transparent; box-shadow: none; color: var(--text-soft); font-size: 11px; }
+    .auto-response { min-height: 108px; resize: vertical; }
+    .auto-rule-hint { margin: 6px 0 0; color: #686577; font-size: 9px; }
+    @keyframes ruleEnter { from { opacity: 0; transform: translateY(7px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    @keyframes chipIn { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: scale(1); } }
     .time-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
     .variables { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; color: #6f6c7e; font-size: 10px; }
     .code { display: inline-flex; align-items: center; min-height: 21px; padding: 2px 7px; border: 1px solid rgba(139,92,246,.15); border-radius: 7px; background: rgba(139,92,246,.065); color: #bda9ff; font: 10px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace; }
@@ -607,7 +755,7 @@ export function renderAppHtml(): string {
       .overview { grid-template-columns: 1fr; }
       .metric { min-height: 57px; }
       .card { padding: 18px; border-radius: 21px; }
-      .fields, .template-grid, .reply-grid, .time-grid { grid-template-columns: 1fr; }
+      .fields, .template-grid, .reply-grid, .broadcast-grid, .auto-rule-fields, .time-grid { grid-template-columns: 1fr; }
       .field.full { grid-column: auto; }
       .chat-tools { flex-direction: column; align-items: stretch; }
       .chat-tools button { width: 100%; }
@@ -691,7 +839,26 @@ export function renderAppHtml(): string {
           <div class="field"><label class="field-label" for="replyWindow">Окно ответа <span class="field-note">Сек.</span></label><input id="replyWindow" type="number" min="10" max="3600"><p class="hint">Командное слово задаётся только в текстовом триггере Astra. Например: «Астра, напиши привет».</p></div>
           <div class="field"><label class="field-label" for="replyConfirmationTemplate">После отправки ответа <span class="field-note">Голос Astra</span></label><textarea id="replyConfirmationTemplate" placeholder="Ответ отправлен."></textarea><p class="hint">Что Astra скажет после успешной отправки в Telegram. Можно использовать {sender}, {chat} и {message}; оставьте поле пустым, чтобы ничего не произносить.</p></div>
         </div>
-        <div class="field tool-send-field"><label class="field-label" for="sendCommandPhrase">Фраза для отправки <span class="field-note">AI tool</span></label><input id="sendCommandPhrase" maxlength="80" placeholder="напиши"><p class="hint">С этой фразы должен начинаться запрос, например: «Астра, напиши Андрюхе, что буду через час». Можно заменить на «напиши в Телеграме» или другую фразу. Astra найдёт чат, покажет черновик и отправит его только после отдельного подтверждения.</p></div>
+        <div class="field tool-send-field"><label class="field-label" for="sendCommandPhrase">Фраза для одного чата <span class="field-note">AI tool</span></label><input id="sendCommandPhrase" maxlength="80" placeholder="напиши"><p class="hint">Например: «Астра, напиши Андрюхе, что буду через час». Фраза помогает нейронке понять намерение, но синонимы вроде «отправь» тоже работают. Перед отправкой Astra обязательно покажет черновик.</p></div>
+        <div class="broadcast-panel">
+          <div class="broadcast-head"><span class="broadcast-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h11M4 12h8M4 17h6"/><path d="m15 14 5 3-5 3v-6Z"/></svg>Массовая отправка</span><span class="broadcast-badge">до 10 чатов</span></div>
+          <div class="broadcast-grid">
+            <div class="field"><label class="field-label" for="broadcastCommandPhrase">Фраза для рассылки <span class="field-note">AI tool</span></label><input id="broadcastCommandPhrase" maxlength="80" placeholder="разошли"></div>
+            <div class="field"><label class="field-label" for="broadcastDelayMinSeconds">Задержка от <span class="field-note">Сек.</span></label><input id="broadcastDelayMinSeconds" type="number" min="1" max="60"></div>
+            <div class="field"><label class="field-label" for="broadcastDelayMaxSeconds">Задержка до <span class="field-note">Сек.</span></label><input id="broadcastDelayMaxSeconds" type="number" min="1" max="60"></div>
+          </div>
+          <p class="hint">Назовите несколько чатов, @username или целую <b>папку Telegram</b>: нейронка сама выберет массовый инструмент. После общего подтверждения сообщение отправляется каждому отдельно со случайной задержкой из диапазона.</p>
+          <div id="broadcastStatus" class="broadcast-status" hidden></div>
+          <div id="autoResponderPanel" class="auto-responder">
+            <div class="auto-responder-head">
+              <div class="auto-responder-copy"><strong>Автоответчик после рассылки</strong><span>Отвечает только в личных чатах последней кампании и работает до ручного отключения.</span></div>
+              <label class="toggle" aria-label="Автоответчик после рассылки"><input id="autoResponderEnabled" type="checkbox"><span class="switch"></span></label>
+            </div>
+            <div id="autoResponderStatus" class="auto-responder-status">Автоответчик выключен</div>
+            <div class="auto-rule-toolbar"><span>Триггеры могут быть словами или целыми предложениями</span><button id="addAutoReplyRuleBtn" type="button" class="add-rule"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>Добавить правило</button></div>
+            <div id="autoReplyRules" class="auto-rule-list"></div>
+          </div>
+        </div>
         <div class="actions"><button id="saveSettingsBtn" class="primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 4h12l2 2v14H5V4Z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg>Сохранить настройки</button></div>
         <p id="activity" class="activity">Ожидаем состояние плагина</p>
       </section>
@@ -749,9 +916,13 @@ export function renderAppHtml(): string {
   (() => {
     const astra = window.astra;
     const $ = (id) => document.getElementById(id);
+    const consumeAutoReplyTriggerInput = ${consumeAutoReplyTriggerInput.toString()};
+    const validateAutoReplyRulesForSave = ${validateAutoReplyRulesForSave.toString()};
     let state = null;
     let chats = [];
     let selected = new Set();
+    let autoReplyRules = [];
+    const autoReplyDrafts = new Map();
     let selectionDirty = false;
     let settingsDirty = false;
     let refreshing = false;
@@ -868,9 +1039,34 @@ export function renderAppHtml(): string {
         $('replyWindow').value = p.replyWindowSeconds;
         $('replyConfirmationTemplate').value = p.replyConfirmationTemplate;
         $('sendCommandPhrase').value = p.sendCommandPhrase;
+        $('broadcastCommandPhrase').value = p.broadcastCommandPhrase;
+        $('broadcastDelayMinSeconds').value = p.broadcastDelayMinSeconds;
+        $('broadcastDelayMaxSeconds').value = p.broadcastDelayMaxSeconds;
+        $('autoResponderEnabled').checked = p.autoResponderEnabled === true;
+        autoReplyRules = (p.autoReplyRules || []).map((rule) => ({
+          id: String(rule.id || ''),
+          triggers: Array.isArray(rule.triggers) ? rule.triggers.map(String) : [],
+          response: String(rule.response || ''),
+        }));
+        autoReplyDrafts.clear();
+        renderAutoReplyRules();
       }
 
       $('activity').textContent = next.lastActivity + (next.replyTarget ? ' · Ответ для «' + next.replyTarget.chat + '» доступен ещё ' + next.replyTarget.secondsLeft + ' сек.' : '');
+      const broadcast = next.broadcastStatus || {phase:'idle',total:0,sent:0,failed:[]};
+      const broadcastStatus = $('broadcastStatus');
+      broadcastStatus.hidden = broadcast.phase === 'idle';
+      broadcastStatus.className = 'broadcast-status';
+      if (broadcast.phase === 'sending') {
+        broadcastStatus.classList.add('sending');
+        broadcastStatus.textContent = 'Рассылка выполняется: отправлено ' + broadcast.sent + ' из ' + broadcast.total;
+      } else if (broadcast.phase === 'completed' && (broadcast.failed || []).length) {
+        broadcastStatus.classList.add('failed');
+        broadcastStatus.textContent = 'Рассылка завершена: ' + broadcast.sent + ' из ' + broadcast.total + '. Не отправлено: ' + broadcast.failed.join(', ');
+      } else if (broadcast.phase === 'completed') {
+        broadcastStatus.textContent = 'Рассылка завершена: ' + broadcast.sent + ' из ' + broadcast.total;
+      }
+      renderAutoResponderStatus(next.autoResponderStatus || {phase:'disabled',recipients:0,repliesSent:0});
       $('chatMini').textContent = p.selectedChatIds.length ? p.selectedChatIds.length + ' из ' + next.maxSelectedChats + ' чатов' : 'Чаты не выбраны';
       $('replyMini').textContent = 'Команда задаётся в Astra';
 
@@ -879,6 +1075,234 @@ export function renderAppHtml(): string {
       top.className = 'status ' + (next.monitoring ? 'ok' : next.authStage === 'error' ? 'error' : connected || next.authStage.includes('awaiting') || next.authStage.includes('verifying') || next.authStage === 'sending_code' || next.authStage === 'restoring' ? 'warn' : '');
       if (previousConnected !== connected || selectionChanged) renderChats();
       else updateSelected();
+    }
+
+    function renderAutoResponderStatus(summary) {
+      const box = $('autoResponderStatus');
+      box.className = 'auto-responder-status ' + (summary.phase || 'disabled');
+      if (summary.phase === 'active') {
+        box.textContent = 'Активен: ' + summary.recipients + ' личных чатов · автоответов ' + summary.repliesSent;
+      } else if (summary.phase === 'waiting') {
+        box.textContent = 'Включён · ждёт новую подтверждённую рассылку';
+      } else {
+        box.textContent = 'Выключен · активной кампании нет';
+      }
+      $('autoResponderPanel').classList.toggle('enabled', $('autoResponderEnabled').checked);
+    }
+
+    function createAutoReplyRuleId() {
+      return 'rule-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
+    }
+
+    function autoReplyRule(ruleId) {
+      return autoReplyRules.find((rule) => rule.id === ruleId);
+    }
+
+    function triggerKey(value) {
+      return String(value || '').normalize('NFKC').toLocaleLowerCase('ru-RU').replaceAll('ё', 'е').replace(/\s+/g, ' ').trim();
+    }
+
+    function addTriggers(rule, values) {
+      const known = new Set(rule.triggers.map(triggerKey));
+      values.forEach((value) => {
+        const trigger = String(value || '').trim().replace(/\s+/g, ' ').slice(0, 300);
+        const key = triggerKey(trigger);
+        if (key && !known.has(key)) {
+          known.add(key);
+          rule.triggers.push(trigger);
+        }
+      });
+    }
+
+    function renderAutoReplyRules(focusRuleId = '') {
+      const container = $('autoReplyRules');
+      container.textContent = '';
+      $('autoResponderPanel').classList.toggle('enabled', $('autoResponderEnabled').checked);
+      if (!autoReplyRules.length) {
+        const empty = document.createElement('div');
+        empty.className = 'auto-rule-empty';
+        empty.textContent = 'Правил пока нет. Добавьте триггеры и сохранённый ответ для новой рассылки.';
+        container.appendChild(empty);
+        return;
+      }
+
+      autoReplyRules.forEach((rule, index) => {
+        const card = document.createElement('div');
+        card.className = 'auto-rule-card';
+        card.style.setProperty('--rule-index', String(index));
+
+        const head = document.createElement('div');
+        head.className = 'auto-rule-head';
+        const number = document.createElement('span');
+        number.className = 'auto-rule-number';
+        const badge = document.createElement('i');
+        badge.textContent = String(index + 1).padStart(2, '0');
+        number.append(badge, document.createTextNode('Правило автоответа'));
+        const removeRule = document.createElement('button');
+        removeRule.type = 'button';
+        removeRule.className = 'rule-delete';
+        removeRule.dataset.deleteRule = rule.id;
+        removeRule.title = 'Удалить правило';
+        removeRule.setAttribute('aria-label', 'Удалить правило ' + (index + 1));
+        removeRule.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg>';
+        head.append(number, removeRule);
+
+        const fields = document.createElement('div');
+        fields.className = 'auto-rule-fields';
+        const triggerField = document.createElement('div');
+        triggerField.className = 'field';
+        const triggerLabel = document.createElement('label');
+        triggerLabel.className = 'field-label';
+        triggerLabel.textContent = 'Триггерные фразы';
+        const triggerEditor = document.createElement('div');
+        triggerEditor.className = 'trigger-editor';
+        const chips = document.createElement('div');
+        chips.className = 'trigger-chips';
+        rule.triggers.forEach((trigger, triggerIndex) => {
+          const chip = document.createElement('span');
+          chip.className = 'trigger-chip';
+          const edit = document.createElement('button');
+          edit.type = 'button';
+          edit.className = 'trigger-chip-edit';
+          edit.dataset.editRule = rule.id;
+          edit.dataset.triggerIndex = String(triggerIndex);
+          edit.title = 'Изменить триггер';
+          edit.textContent = trigger;
+          const remove = document.createElement('button');
+          remove.type = 'button';
+          remove.className = 'trigger-chip-remove';
+          remove.dataset.removeRule = rule.id;
+          remove.dataset.triggerIndex = String(triggerIndex);
+          remove.title = 'Удалить триггер';
+          remove.setAttribute('aria-label', 'Удалить триггер ' + trigger);
+          remove.textContent = '×';
+          chip.append(edit, remove);
+          chips.appendChild(chip);
+        });
+        const triggerInput = document.createElement('input');
+        triggerInput.className = 'trigger-input';
+        triggerInput.dataset.triggerInput = rule.id;
+        triggerInput.maxLength = 300;
+        triggerInput.placeholder = 'Введите фразу, затем запятую или Enter';
+        triggerInput.value = autoReplyDrafts.get(rule.id) || '';
+        triggerEditor.append(chips, triggerInput);
+        const triggerHint = document.createElement('p');
+        triggerHint.className = 'auto-rule-hint';
+        triggerHint.textContent = 'Пробел остаётся частью фразы. Кликните по чипу, чтобы изменить его.';
+        triggerField.append(triggerLabel, triggerEditor, triggerHint);
+
+        const responseField = document.createElement('div');
+        responseField.className = 'field';
+        const responseLabel = document.createElement('label');
+        responseLabel.className = 'field-label';
+        responseLabel.textContent = 'Сохранённый ответ';
+        const response = document.createElement('textarea');
+        response.className = 'auto-response';
+        response.dataset.responseRule = rule.id;
+        response.maxLength = 4096;
+        response.placeholder = 'Этот текст отправится без изменений';
+        response.value = rule.response;
+        const responseHint = document.createElement('p');
+        responseHint.className = 'auto-rule-hint';
+        responseHint.textContent = 'Если совпадут несколько правил, нейронка только выберет один из сохранённых ответов.';
+        responseField.append(responseLabel, response, responseHint);
+
+        fields.append(triggerField, responseField);
+        card.append(head, fields);
+        container.appendChild(card);
+      });
+
+      if (focusRuleId) {
+        const input = container.querySelector('[data-trigger-input="' + focusRuleId + '"]');
+        if (input) {
+          input.focus();
+          input.setSelectionRange(input.value.length, input.value.length);
+        }
+      }
+    }
+
+    function commitAutoReplyDraft(ruleId, commitAll, suppliedValue) {
+      const rule = autoReplyRule(ruleId);
+      if (!rule) return false;
+      const input = $('autoReplyRules').querySelector('[data-trigger-input="' + ruleId + '"]');
+      const value = suppliedValue === undefined
+        ? String(input?.value ?? autoReplyDrafts.get(ruleId) ?? '')
+        : String(suppliedValue);
+      const parsed = consumeAutoReplyTriggerInput(value, commitAll);
+      addTriggers(rule, parsed.committed);
+      autoReplyDrafts.set(ruleId, parsed.remainder);
+      return parsed.committed.length > 0;
+    }
+
+    function collectAutoReplyRules() {
+      autoReplyRules.forEach((rule) => commitAutoReplyDraft(rule.id, true));
+      renderAutoReplyRules();
+      return autoReplyRules.map((rule) => ({
+        id: rule.id,
+        triggers: [...rule.triggers],
+        response: rule.response.trim(),
+      }));
+    }
+
+    function onAutoReplyRuleInput(event) {
+      const target = event.target;
+      const responseRuleId = target?.dataset?.responseRule;
+      if (responseRuleId) {
+        const rule = autoReplyRule(responseRuleId);
+        if (rule) rule.response = target.value;
+        settingsDirty = true;
+        return;
+      }
+      const triggerRuleId = target?.dataset?.triggerInput;
+      if (!triggerRuleId) return;
+      autoReplyDrafts.set(triggerRuleId, target.value);
+      settingsDirty = true;
+      if (target.value.includes(',') && commitAutoReplyDraft(triggerRuleId, false, target.value)) {
+        renderAutoReplyRules(triggerRuleId);
+      }
+    }
+
+    function onAutoReplyRuleKeydown(event) {
+      const ruleId = event.target?.dataset?.triggerInput;
+      if (!ruleId || (event.key !== 'Enter' && event.key !== ',')) return;
+      event.preventDefault();
+      const value = event.key === ',' ? event.target.value + ',' : event.target.value;
+      if (commitAutoReplyDraft(ruleId, event.key === 'Enter', value)) {
+        settingsDirty = true;
+        renderAutoReplyRules(ruleId);
+      }
+    }
+
+    function onAutoReplyRuleClick(event) {
+      const button = event.target.closest('button');
+      if (!button) return;
+      if (button.dataset.deleteRule) {
+        const ruleId = button.dataset.deleteRule;
+        autoReplyRules = autoReplyRules.filter((rule) => rule.id !== ruleId);
+        autoReplyDrafts.delete(ruleId);
+        settingsDirty = true;
+        renderAutoReplyRules();
+        return;
+      }
+      const removeRuleId = button.dataset.removeRule;
+      if (removeRuleId !== undefined) {
+        const rule = autoReplyRule(removeRuleId);
+        const index = Number(button.dataset.triggerIndex);
+        if (rule && Number.isInteger(index)) rule.triggers.splice(index, 1);
+        settingsDirty = true;
+        renderAutoReplyRules(removeRuleId);
+        return;
+      }
+      const editRuleId = button.dataset.editRule;
+      if (editRuleId !== undefined) {
+        const rule = autoReplyRule(editRuleId);
+        const index = Number(button.dataset.triggerIndex);
+        if (!rule || !Number.isInteger(index) || !rule.triggers[index]) return;
+        autoReplyDrafts.set(editRuleId, rule.triggers[index]);
+        rule.triggers.splice(index, 1);
+        settingsDirty = true;
+        renderAutoReplyRules(editRuleId);
+      }
     }
 
     function maskValue(value) {
@@ -1022,6 +1446,10 @@ export function renderAppHtml(): string {
     }
 
     async function savePreferences() {
+      const autoResponderEnabled = $('autoResponderEnabled').checked;
+      const savedAutoReplyRules = collectAutoReplyRules();
+      const autoReplyError = validateAutoReplyRulesForSave(autoResponderEnabled, savedAutoReplyRules);
+      if (autoReplyError) throw new Error(autoReplyError);
       const body = {
         enabled: $('enabled').checked,
         selectedChatIds: [...selected],
@@ -1032,6 +1460,11 @@ export function renderAppHtml(): string {
         replyWindowSeconds: Number($('replyWindow').value),
         replyConfirmationTemplate: $('replyConfirmationTemplate').value,
         sendCommandPhrase: $('sendCommandPhrase').value,
+        broadcastCommandPhrase: $('broadcastCommandPhrase').value,
+        broadcastDelayMinSeconds: Number($('broadcastDelayMinSeconds').value),
+        broadcastDelayMaxSeconds: Number($('broadcastDelayMaxSeconds').value),
+        autoResponderEnabled,
+        autoReplyRules: savedAutoReplyRules,
       };
       const result = await api('savePreferences', body);
       selectionDirty = false;
@@ -1132,8 +1565,23 @@ export function renderAppHtml(): string {
     $('saveSettingsBtn').onclick = async () => { try { await savePreferences(); } catch(error){toast(error.message,true);} };
     $('chatSearch').oninput = renderChats;
     $('chatList').addEventListener('change', onChatToggle);
+    $('addAutoReplyRuleBtn').onclick = () => {
+      const id = createAutoReplyRuleId();
+      autoReplyRules.push({id, triggers:[], response:''});
+      autoReplyDrafts.set(id, '');
+      settingsDirty = true;
+      renderAutoReplyRules(id);
+    };
+    $('autoResponderEnabled').addEventListener('change', () => {
+      settingsDirty = true;
+      $('autoResponderPanel').classList.toggle('enabled', $('autoResponderEnabled').checked);
+    });
+    $('autoReplyRules').addEventListener('input', onAutoReplyRuleInput);
+    $('autoReplyRules').addEventListener('keydown', onAutoReplyRuleKeydown);
+    $('autoReplyRules').addEventListener('click', onAutoReplyRuleClick);
     document.querySelectorAll('[data-copy]').forEach((button) => button.addEventListener('click', () => copyValue(button)));
-    ['enabled','textTemplate','voiceTemplate','replyWindow','replyConfirmationTemplate','sendCommandPhrase'].forEach((id) => $(id).addEventListener('input', () => { settingsDirty = true; }));
+    ['enabled','textTemplate','voiceTemplate','replyWindow','replyConfirmationTemplate','sendCommandPhrase','broadcastCommandPhrase','broadcastDelayMinSeconds','broadcastDelayMaxSeconds','autoResponderEnabled'].forEach((id) => $(id).addEventListener('input', () => { settingsDirty = true; }));
+    renderAutoReplyRules();
     renderIdentity();
     refresh();
     setInterval(refresh, 2500);

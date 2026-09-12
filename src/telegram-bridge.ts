@@ -12,7 +12,22 @@ import { Api, TelegramClient } from "teleproto";
 import { NewMessage } from "teleproto/events";
 import { Logger, LogLevel } from "teleproto/extensions/Logger";
 import { StringSession } from "teleproto/sessions";
+import { getPeerId } from "teleproto/Utils";
 
+import {
+  type AutoReplyCampaign,
+  type AutoReplyCampaignRecipient,
+  buildAutoReplySelectionPrompt,
+  matchingAutoReplyRules,
+  parseSelectedRuleId,
+} from "./auto-responder";
+import {
+  type BroadcastDialog,
+  type BroadcastFolder,
+  expandFolderMembers,
+  planBroadcast,
+  runBroadcastQueue,
+} from "./broadcast";
 import { parseCommandsBundle } from "./commands-bundle";
 import { telegramDeploymentConfig } from "./deployment-config";
 import {
@@ -30,6 +45,8 @@ import {
   sanitizePreferences,
 } from "./model";
 import { createTelegramTransport } from "./telegram-transport";
+
+const MAX_BROADCAST_RECIPIENTS = 10;
 
 type AuthStage =
   | "logged_out"
@@ -61,6 +78,25 @@ interface PendingOutgoingMessage {
   recipient: string;
   text: string;
   expiresAt: number;
+}
+
+interface PendingBroadcast {
+  targets: BroadcastDialog[];
+  text: string;
+  expiresAt: number;
+}
+
+interface BroadcastStatus {
+  phase: "idle" | "sending" | "completed";
+  total: number;
+  sent: number;
+  failed: string[];
+}
+
+interface AutoResponderStatus {
+  phase: "disabled" | "waiting" | "active";
+  recipients: number;
+  repliesSent: number;
 }
 
 interface RecentSpeech {
@@ -98,6 +134,8 @@ export interface PublicState {
   /** Where Telegram said it put the login code, once it has said so. */
   codeDelivery: "" | "app" | "sms" | "call";
   replyTarget: null | { sender: string; chat: string; secondsLeft: number };
+  broadcastStatus: BroadcastStatus;
+  autoResponderStatus: AutoResponderStatus;
 }
 
 export class TelegramBridge {
@@ -120,6 +158,9 @@ export class TelegramBridge {
   private lastActivity = "Плагин запущен";
   private pendingReply?: PendingReply;
   private pendingOutgoingMessage?: PendingOutgoingMessage;
+  private pendingBroadcast?: PendingBroadcast;
+  private broadcastInProgress = false;
+  private broadcastStatus: BroadcastStatus = { phase: "idle", total: 0, sent: 0, failed: [] };
   private outgoingSendInProgress = false;
   private awaitingReplyText = false;
   private recentSpeech?: RecentSpeech;
@@ -131,6 +172,8 @@ export class TelegramBridge {
   private readonly detachedScope = new AsyncResource("astra-telegram-detached");
   private messageQueue: Promise<void> = Promise.resolve();
   private triggerQueue: Promise<void> = Promise.resolve();
+  private autoReplyQueue: Promise<void> = Promise.resolve();
+  private readonly autoReplyReservations = new Set<string>();
   private readonly messageHandler = (event: any): Promise<void> => {
     const task = this.messageQueue.then(() => this.onTelegramMessage(event));
     this.messageQueue = task.catch(() => undefined);
@@ -161,6 +204,7 @@ export class TelegramBridge {
     this.codeInput = undefined;
     this.passwordInput = undefined;
     this.telegramCredentials = undefined;
+    this.pendingBroadcast = undefined;
     await this.disconnectClient();
   }
 
@@ -194,11 +238,32 @@ export class TelegramBridge {
       lastActivity: this.lastActivity,
       codeDelivery: this.codeDelivery,
       replyTarget,
+      broadcastStatus: {
+        ...this.broadcastStatus,
+        failed: [...this.broadcastStatus.failed],
+      },
+      autoResponderStatus: this.autoResponderStatus(),
+    };
+  }
+
+  private autoResponderStatus(): AutoResponderStatus {
+    if (!this.state.preferences.autoResponderEnabled) {
+      return { phase: "disabled", recipients: 0, repliesSent: 0 };
+    }
+    const recipients = this.state.autoReplyCampaign?.recipients ?? [];
+    return {
+      phase: recipients.length ? "active" : "waiting",
+      recipients: recipients.length,
+      repliesSent: recipients.reduce((total, recipient) => total + recipient.firedRuleIds.length, 0),
     };
   }
 
   outgoingCommandPhrase(): string {
     return this.state.preferences.sendCommandPhrase;
+  }
+
+  broadcastCommandPhrase(): string {
+    return this.state.preferences.broadcastCommandPhrase;
   }
 
   async monitorAllChats(): Promise<{ chats: ChatInfo[]; preferences: Preferences }> {
@@ -284,6 +349,7 @@ export class TelegramBridge {
 
     this.state.phone = phone;
     this.state.session = "";
+    this.state.autoReplyCampaign = undefined;
     this.authError = "";
     this.passwordHint = "";
     this.codeDelivery = "";
@@ -443,12 +509,14 @@ export class TelegramBridge {
     this.state.session = "";
     this.state.preferences.selectedChatIds = [];
     this.state.preferences.selectedChatNames = {};
+    this.state.autoReplyCampaign = undefined;
     this.accountName = "";
     this.authStage = "logged_out";
     this.authError = "";
     this.sessionInvalidated = false;
     this.pendingReply = undefined;
     this.pendingOutgoingMessage = undefined;
+    this.pendingBroadcast = undefined;
     this.outgoingSendInProgress = false;
     this.awaitingReplyText = false;
     this.recentSpeech = undefined;
@@ -481,7 +549,15 @@ export class TelegramBridge {
       throw new Error(`Можно выбрать не больше ${MAX_SELECTED_CHATS} чатов`);
     }
     const preferences = sanitizePreferences(value);
+    if (preferences.autoResponderEnabled && !preferences.autoReplyRules.length) {
+      throw new Error("Добавьте хотя бы одно правило автоответчика");
+    }
+    if (preferences.autoResponderEnabled && preferences.autoReplyRules.some((rule) =>
+      !rule.triggers.length || !rule.response)) {
+      throw new Error("Заполните триггеры и ответ во всех правилах автоответчика");
+    }
     this.state.preferences = preferences;
+    if (!preferences.autoResponderEnabled) this.state.autoReplyCampaign = undefined;
     this.lastActivity = preferences.enabled ? "Настройки мониторинга сохранены" : "Мониторинг приостановлен";
     await this.persistState();
     return {
@@ -498,19 +574,13 @@ export class TelegramBridge {
    * any Telegram write.
    */
   async prepareOutgoingMessage(
-    requestValue: unknown,
+    _requestValue: unknown,
     recipientValue: unknown,
     messageValue: unknown,
   ): Promise<string> {
-    const request = String(requestValue ?? "").trim();
     const recipientQuery = String(recipientValue ?? "").trim();
     const text = String(messageValue ?? "").trim();
-    const commandPhrase = this.state.preferences.sendCommandPhrase;
-
-    if (matchReplyCommand(request, commandPhrase).kind === "none") {
-      this.pendingOutgoingMessage = undefined;
-      return `Используйте фразу «${commandPhrase}».`;
-    }
+    this.pendingBroadcast = undefined;
     if (!recipientQuery) return "Кому отправить сообщение?";
     if (!text) return "Что отправить?";
     if (text.length > 4096) return "Сообщение длиннее 4096 символов.";
@@ -558,6 +628,58 @@ export class TelegramBridge {
     return `Отправить в чат «${best.title}»: «${preview}»?`;
   }
 
+  async prepareBroadcastMessage(
+    _requestValue: unknown,
+    recipientValues: unknown,
+    folderValues: unknown,
+    messageValue: unknown,
+  ): Promise<string> {
+    const recipientQueries = Array.isArray(recipientValues)
+      ? recipientValues.map(String).map((value) => value.trim()).filter(Boolean)
+      : [];
+    const folderQueries = Array.isArray(folderValues)
+      ? folderValues.map(String).map((value) => value.trim()).filter(Boolean)
+      : [];
+    const text = String(messageValue ?? "").trim();
+    this.pendingOutgoingMessage = undefined;
+    this.pendingBroadcast = undefined;
+
+    if (!recipientQueries.length && !folderQueries.length) return "Кому отправить сообщение?";
+    if (!text) return "Что отправить?";
+    if (text.length > 4096) return "Сообщение длиннее 4096 символов.";
+
+    const client = this.requireConnected();
+    const dialogs = await this.guardSession(() => client.getDialogs({ limit: MAX_SELECTED_CHATS }));
+    const broadcastDialogs = dialogs
+      .filter((dialog: any) => Boolean(dialog?.inputEntity))
+      .map(toBroadcastDialog)
+      .filter((dialog: BroadcastDialog) => Boolean(dialog.key));
+    const response: any = folderQueries.length
+      ? await this.guardSession(() => client.invoke(new Api.messages.GetDialogFilters()))
+      : { filters: [] };
+    const folders: BroadcastFolder[] = (Array.isArray(response?.filters) ? response.filters : [])
+      .map((filter: any) => toBroadcastFolder(filter, broadcastDialogs))
+      .filter((folder: BroadcastFolder | undefined): folder is BroadcastFolder => Boolean(folder));
+    const plan = planBroadcast({
+      recipientQueries,
+      folderQueries,
+      dialogs: broadcastDialogs,
+      folders,
+      maxRecipients: MAX_BROADCAST_RECIPIENTS,
+    });
+    if (!plan.ok) return plan.message;
+    if (!plan.targets.length) return "В выбранных папках нет доступных чатов.";
+
+    this.pendingBroadcast = {
+      targets: plan.targets,
+      text,
+      expiresAt: Date.now() + 2 * 60_000,
+    };
+    this.lastActivity = `Подготовлена рассылка в ${plan.targets.length} чатов`;
+    const names = plan.targets.map((target) => `«${target.title}»`).join(", ");
+    return `Отправить сообщение «${speechPreview(text, 240)}» в ${plan.targets.length} чата: ${names}?`;
+  }
+
   async confirmOutgoingMessage(confirmedValue: unknown): Promise<string> {
     this.cleanupExpired();
     const pending = this.pendingOutgoingMessage;
@@ -580,6 +702,98 @@ export class TelegramBridge {
       return `Отправлено в чат «${pending.recipient}».`;
     } finally {
       this.outgoingSendInProgress = false;
+    }
+  }
+
+  async confirmBroadcastMessage(confirmedValue: unknown): Promise<string> {
+    this.cleanupExpired();
+    const pending = this.pendingBroadcast;
+    if (!pending) return "Нет рассылки для подтверждения.";
+    if (confirmedValue !== true) {
+      this.pendingBroadcast = undefined;
+      this.lastActivity = "Рассылка отменена";
+      return "Рассылка отменена.";
+    }
+    if (this.broadcastInProgress) return "Рассылка уже выполняется.";
+
+    this.pendingBroadcast = undefined;
+    this.broadcastInProgress = true;
+    this.broadcastStatus = {
+      phase: "sending",
+      total: pending.targets.length,
+      sent: 0,
+      failed: [],
+    };
+    const rules = this.state.preferences.autoReplyRules;
+    const campaign = this.state.preferences.autoResponderEnabled && rules.length > 0 &&
+      rules.every((rule) => rule.triggers.length > 0 && Boolean(rule.response))
+      ? {
+          id: randomUUID(),
+          createdAt: Date.now(),
+          recipients: [],
+        }
+      : undefined;
+    this.state.autoReplyCampaign = campaign;
+    await this.persistState();
+    void this.executeBroadcast(pending, campaign?.id);
+    return `Рассылка запущена в ${pending.targets.length} чата.`;
+  }
+
+  private async executeBroadcast(pending: PendingBroadcast, campaignId?: string): Promise<void> {
+    try {
+      const client = this.requireConnected();
+      const result = await runBroadcastQueue({
+        targets: pending.targets,
+        minDelayMs: this.state.preferences.broadcastDelayMinSeconds * 1000,
+        maxDelayMs: this.state.preferences.broadcastDelayMaxSeconds * 1000,
+        random: Math.random,
+        sleep: delay,
+        send: async (target) => {
+          await this.guardSession(() => client.sendMessage(target.peer as any, { message: pending.text }));
+          this.broadcastStatus.sent += 1;
+          this.lastActivity = `Рассылка: отправлено ${this.broadcastStatus.sent} из ${pending.targets.length}`;
+          await this.addCampaignRecipient(campaignId, target);
+        },
+        floodWaitMilliseconds,
+      });
+      const failed = result.failed.map((item) => item.target.title);
+      this.broadcastStatus = {
+        phase: "completed",
+        total: pending.targets.length,
+        sent: result.sent.length,
+        failed,
+      };
+      this.lastActivity = failed.length
+        ? `Рассылка завершена: ${result.sent.length} из ${pending.targets.length}; ошибки: ${failed.join(", ")}`
+        : `Рассылка завершена: ${result.sent.length} из ${pending.targets.length}`;
+      await this.log(
+        failed.length ? "warn" : "info",
+        `Telegram broadcast completed: ${result.sent.length}/${pending.targets.length}; failed: ${failed.join(", ") || "none"}`,
+      );
+    } catch (error) {
+      this.broadcastStatus = {
+        phase: "completed",
+        total: pending.targets.length,
+        sent: this.broadcastStatus.sent,
+        failed: pending.targets.slice(this.broadcastStatus.sent).map((target) => target.title),
+      };
+      this.lastActivity = `Рассылка остановлена: ${errorText(error)}`;
+      await this.log("error", `Telegram broadcast stopped: ${errorText(error)}`);
+    } finally {
+      this.broadcastInProgress = false;
+    }
+  }
+
+  private async addCampaignRecipient(
+    campaignId: string | undefined,
+    target: BroadcastDialog,
+  ): Promise<void> {
+    if (!campaignId || target.kind !== "user" || target.bot) return;
+    const campaign = this.state.autoReplyCampaign;
+    if (!campaign || campaign.id !== campaignId) return;
+    if (!campaign.recipients.some((recipient) => recipient.peerKey === target.key)) {
+      campaign.recipients.push({ peerKey: target.key, title: target.title, firedRuleIds: [] });
+      await this.persistState();
     }
   }
 
@@ -823,6 +1037,11 @@ export class TelegramBridge {
       const message = String(record.message ?? "").replace(/\s+/g, " ").trim().slice(0, 400);
       if (!message) return;
 
+      // teleproto emits this before its own built-in two-second retry. It is
+      // not the final result of the call, so forwarding it to Astra makes a
+      // successfully recovered Telegram hiccup look like a plugin failure.
+      if (/^Telegram is having internal issues ServerError$/iu.test(message)) return;
+
       const invalidation = sessionInvalidationCode(message);
       if (invalidation) {
         void this.handleInvalidatedSession(invalidation);
@@ -866,6 +1085,7 @@ export class TelegramBridge {
     this.lastActivity = this.authError;
     this.pendingReply = undefined;
     this.pendingOutgoingMessage = undefined;
+    this.state.autoReplyCampaign = undefined;
     this.outgoingSendInProgress = false;
     this.awaitingReplyText = false;
     this.recentSpeech = undefined;
@@ -884,16 +1104,21 @@ export class TelegramBridge {
       const message: any = event?.message;
       if (!message || message.out) return;
       const chatId = message.chatId?.toString();
-      if (!chatId || !this.state.preferences.enabled) return;
-      if (!this.state.preferences.selectedChatIds.includes(chatId)) return;
-
       const isVoice = Boolean(message.voice);
       const text = String(message.text || "").trim();
+      let peer: any;
+      if (text && this.state.preferences.autoResponderEnabled && this.state.autoReplyCampaign) {
+        peer = await message.getInputChat();
+        if (peer) this.queueAutoReply(peer, text);
+      }
+
+      if (!chatId || !this.state.preferences.enabled) return;
+      if (!this.state.preferences.selectedChatIds.includes(chatId)) return;
       if (!isVoice && !text) return;
 
       const chatEntity: any = (await message.getChat()) ?? message.chat;
       const senderEntity: any = (await message.getSender()) ?? message.sender;
-      const peer = await message.getInputChat();
+      peer ??= await message.getInputChat();
       if (!peer) throw new Error("Telegram не вернул адрес чата для ответа");
       const chat = displayName(chatEntity, "Telegram");
       const sender = displayName(senderEntity, chat);
@@ -953,6 +1178,109 @@ export class TelegramBridge {
       this.lastActivity = message;
       await this.log("error", message);
     }
+  }
+
+  private queueAutoReply(peer: any, text: string): void {
+    const campaign = this.state.autoReplyCampaign;
+    if (!campaign || !this.state.preferences.autoResponderEnabled) return;
+    const peerKey = safePeerKey(peer);
+    const recipient = campaign.recipients.find((candidate) => candidate.peerKey === peerKey);
+    if (!recipient) return;
+
+    const task = this.autoReplyQueue.then(() =>
+      this.processAutoReply(campaign.id, peerKey, peer, text));
+    this.autoReplyQueue = task.catch((error) => {
+      void this.log(
+        "warn",
+        `Telegram auto-reply failed for ${recipient.title}: ${errorText(error)}`,
+      );
+    });
+  }
+
+  private async processAutoReply(
+    campaignId: string,
+    peerKey: string,
+    peer: any,
+    incomingText: string,
+  ): Promise<void> {
+    const campaign = this.state.autoReplyCampaign;
+    if (!campaign || campaign.id !== campaignId || !this.state.preferences.autoResponderEnabled) return;
+    const recipient = campaign.recipients.find((candidate) => candidate.peerKey === peerKey);
+    if (!recipient) return;
+
+    const matches = matchingAutoReplyRules(
+      incomingText,
+      this.state.preferences.autoReplyRules,
+      recipient.firedRuleIds,
+    ).filter((rule) => !this.autoReplyReservations.has(reservationKey(campaignId, peerKey, rule.id)));
+    if (!matches.length) return;
+
+    const reservations = matches.map((rule) => reservationKey(campaignId, peerKey, rule.id));
+    reservations.forEach((key) => this.autoReplyReservations.add(key));
+    try {
+      const selected = matches.length === 1
+        ? matches[0]
+        : await this.selectAutoReplyRule(incomingText, matches);
+      if (!selected) {
+        await this.log("warn", `Telegram auto-reply selection returned no valid saved rule for ${recipient.title}`);
+        return;
+      }
+
+      const currentCampaign = this.state.autoReplyCampaign;
+      if (!currentCampaign || currentCampaign.id !== campaignId || !this.state.preferences.autoResponderEnabled) return;
+      const currentRecipient = currentCampaign.recipients.find((candidate) => candidate.peerKey === peerKey);
+      if (!currentRecipient || currentRecipient.firedRuleIds.includes(selected.id)) return;
+
+      const client = this.requireConnected();
+      await this.guardSession(() => client.sendMessage(peer, { message: selected.response }));
+      currentRecipient.firedRuleIds.push(selected.id);
+      try {
+        await this.persistState();
+      } catch (error) {
+        await this.log("warn", `Telegram auto-reply state could not be saved for ${recipient.title}: ${errorText(error)}`);
+      }
+
+      this.lastActivity = `Автоответ отправлен в чат «${recipient.title}»`;
+      try {
+        await this.queueRootTrigger({
+          announcement: `Автоответ отправлен в чат «${recipient.title}».`,
+          sender: recipient.title,
+          chat: recipient.title,
+          message: "",
+          kind: "auto_reply_confirmation",
+          voice_id: "",
+        });
+      } catch (error) {
+        await this.log(
+          "warn",
+          `Telegram auto-reply was sent, but Astra confirmation failed for ${recipient.title}: ${errorText(error)}`,
+        );
+      }
+    } finally {
+      reservations.forEach((key) => this.autoReplyReservations.delete(key));
+    }
+  }
+
+  private async selectAutoReplyRule(
+    incomingText: string,
+    candidates: Preferences["autoReplyRules"],
+  ): Promise<Preferences["autoReplyRules"][number] | undefined> {
+    const ctx = this.ctx;
+    if (!ctx) throw new Error("Astra ещё не подключила контекст плагина");
+    const prompt = buildAutoReplySelectionPrompt(incomingText, candidates);
+    let output = "";
+    let completed = false;
+    for await (const chunk of ctx.sendChatMessage(prompt, { conversationId: "", voiceEnabled: false })) {
+      if (chunk.error) throw new Error(chunk.error);
+      if (chunk.text && output.length < 500) output += chunk.text.slice(0, 500 - output.length);
+      if (chunk.done) {
+        completed = true;
+        break;
+      }
+    }
+    if (!completed) throw new Error("Astra ended auto-reply selection without completion");
+    const selectedId = parseSelectedRuleId(output, candidates.map((candidate) => candidate.id));
+    return candidates.find((candidate) => candidate.id === selectedId);
   }
 
   private async sendReply(text: string, pending: PendingReply): Promise<void> {
@@ -1128,6 +1456,9 @@ export class TelegramBridge {
       this.pendingOutgoingMessage = undefined;
       this.outgoingSendInProgress = false;
     }
+    if (this.pendingBroadcast && this.pendingBroadcast.expiresAt <= now) {
+      this.pendingBroadcast = undefined;
+    }
     for (const [id, item] of this.voiceItems) {
       if (now - item.createdAt > 10 * 60_000) this.voiceItems.delete(id);
     }
@@ -1143,14 +1474,18 @@ export class TelegramBridge {
       const decoded = JSON.parse(readFileSync(this.statePath, "utf8")) as Record<string, unknown>;
       const raw = decoded as Partial<PersistedState>;
       this.stateNeedsRewrite =
-        decoded.schemaVersion !== 2 ||
+        decoded.schemaVersion !== 3 ||
         Object.hasOwn(decoded, "apiId") ||
         Object.hasOwn(decoded, "apiHash");
+      const preferences = sanitizePreferences(raw.preferences);
       this.state = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         phone: typeof raw.phone === "string" ? raw.phone : "",
         session: typeof raw.session === "string" ? raw.session : "",
-        preferences: sanitizePreferences(raw.preferences),
+        preferences,
+        autoReplyCampaign: preferences.autoResponderEnabled
+          ? sanitizeAutoReplyCampaign(raw.autoReplyCampaign)
+          : undefined,
       };
     } catch (error: any) {
       if (error?.code !== "ENOENT") this.lastActivity = "Файл состояния повреждён; использованы настройки по умолчанию";
@@ -1200,8 +1535,49 @@ function deferred<T>(): Deferred<T> {
   return result;
 }
 
+function sanitizeAutoReplyCampaign(value: unknown): AutoReplyCampaign | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  const id = typeof source.id === "string" ? source.id.trim().slice(0, 80) : "";
+  const createdAt = Number(source.createdAt);
+  if (!id || !Number.isFinite(createdAt) || !Array.isArray(source.recipients)) return undefined;
+
+  const recipients: AutoReplyCampaignRecipient[] = [];
+  const seen = new Set<string>();
+  for (const item of source.recipients) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const recipient = item as Record<string, unknown>;
+    const peerKey = typeof recipient.peerKey === "string" ? recipient.peerKey.trim().slice(0, 160) : "";
+    if (!peerKey || seen.has(peerKey)) continue;
+    const title = typeof recipient.title === "string"
+      ? recipient.title.trim().slice(0, 160) || "Telegram"
+      : "Telegram";
+    const firedRuleIds = Array.isArray(recipient.firedRuleIds)
+      ? [...new Set(recipient.firedRuleIds
+          .filter((ruleId): ruleId is string => typeof ruleId === "string")
+          .map((ruleId) => ruleId.trim().slice(0, 80))
+          .filter(Boolean))]
+      : [];
+    seen.add(peerKey);
+    recipients.push({ peerKey, title, firedRuleIds });
+  }
+
+  return { id, createdAt, recipients };
+}
+
+function reservationKey(campaignId: string, peerKey: string, ruleId: string): string {
+  return `${campaignId}\u0000${peerKey}\u0000${ruleId}`;
+}
+
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function floodWaitMilliseconds(error: unknown): number | undefined {
+  const seconds = Number((error as any)?.seconds);
+  if (Number.isFinite(seconds) && seconds > 0) return Math.round(seconds * 1000);
+  const match = errorText(error).match(/(?:FLOOD|SLOWMODE)(?:_PREMIUM)?_WAIT_(\d+)/iu);
+  return match ? Number(match[1]) * 1000 : undefined;
 }
 
 async function playVoiceOnWindows(data: Buffer, mime: string): Promise<void> {
@@ -1366,6 +1742,55 @@ function dialogTitle(dialog: any): string {
     dialog?.name ||
     displayName(dialog?.entity, "Без названия"),
   ).trim() || "Без названия";
+}
+
+function toBroadcastDialog(dialog: any): BroadcastDialog {
+  const entity = dialog?.entity;
+  const muteUntil = Number(dialog?.dialog?.notifySettings?.muteUntil ?? 0);
+  return {
+    key: safePeerKey(dialog.inputEntity),
+    title: dialogTitle(dialog),
+    username: String(entity?.username ?? "").trim() || undefined,
+    peer: dialog.inputEntity,
+    kind: dialog.isGroup ? "group" : dialog.isChannel ? "channel" : "user",
+    contact: entity?.contact === true,
+    bot: entity?.bot === true,
+    archived: dialog.archived === true || Number(dialog.folderId ?? dialog?.dialog?.folderId ?? 0) === 1,
+    muted: muteUntil > Math.floor(Date.now() / 1000),
+    unreadCount: Number(dialog.unreadCount ?? 0),
+  };
+}
+
+function toBroadcastFolder(filter: any, dialogs: BroadcastDialog[]): BroadcastFolder | undefined {
+  if (!filter || filter.className === "DialogFilterDefault") return undefined;
+  const title = String(filter?.title?.text ?? filter?.title ?? "").trim();
+  if (!title) return undefined;
+  const peerKeys = (value: unknown): string[] => Array.isArray(value)
+    ? value.map(safePeerKey).filter(Boolean)
+    : [];
+  const memberKeys = expandFolderMembers({
+    title,
+    contacts: filter.contacts === true,
+    nonContacts: filter.nonContacts === true,
+    groups: filter.groups === true,
+    broadcasts: filter.broadcasts === true,
+    bots: filter.bots === true,
+    excludeMuted: filter.excludeMuted === true,
+    excludeRead: filter.excludeRead === true,
+    excludeArchived: filter.excludeArchived === true,
+    pinnedPeerKeys: peerKeys(filter.pinnedPeers),
+    includePeerKeys: peerKeys(filter.includePeers),
+    excludePeerKeys: peerKeys(filter.excludePeers),
+  }, dialogs);
+  return { title, memberKeys };
+}
+
+function safePeerKey(peer: any): string {
+  try {
+    return getPeerId(peer);
+  } catch {
+    return "";
+  }
 }
 
 function scoreTelegramRecipient(queryValue: string, dialog: any): number {

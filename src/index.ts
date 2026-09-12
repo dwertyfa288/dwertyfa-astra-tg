@@ -20,7 +20,7 @@ export const app = plugin({
   tools: {
     prepare_telegram_message: tool({
       get description() {
-        return `Молча подготовить сообщение в Telegram, только когда реплика пользователя после слова «Астра» начинается с фразы «${bridge.outgoingCommandPhrase()}»: не пиши ничего до вызова tool, а после вызова ответь ровно текстом результата без вступлений, пояснений и пересказа действий.`;
+        return `Молча подготовить сообщение ровно в один Telegram-чат. Используй при явной просьбе отправить одному получателю; фраза «${bridge.outgoingCommandPhrase()}» — настраиваемая смысловая подсказка, но не пароль: допустимы «отправь», «напиши в Telegram» и другие однозначные формулировки. Если получателей два или больше либо названа папка Telegram, обязательно используй prepare_telegram_broadcast и не вызывай этот инструмент отдельно для каждого чата. После вызова ответь ровно текстом результата без вступлений и пояснений; отправка возможна только после отдельного подтверждения.`;
       },
       input: s.object({
         request_text: s.string({
@@ -50,6 +50,50 @@ export const app = plugin({
         }),
       }),
       run: ({ confirmed }) => bridge.confirmOutgoingMessage(confirmed),
+    }),
+    prepare_telegram_broadcast: tool({
+      get description() {
+        return `Молча подготовить отправку одного одинакового сообщения сразу в несколько Telegram-чатов или всем чатам из папки Telegram. Используй, если пользователь назвал два и более получателя, папку либо явно попросил рассылку; фраза «${bridge.broadcastCommandPhrase()}» — настраиваемая смысловая подсказка, но не обязательное точное слово, поэтому учитывай синонимы и смысл всей реплики. Можно одновременно передать отдельные чаты и папки: плагин раскроет папки, уберёт повторы и откажет, если итоговых чатов больше 10. Не вызывай prepare_telegram_message по одному разу на адресата. Инструмент только создаёт общий черновик: после вызова ответь ровно его текстом и никогда не подтверждай рассылку в этом же ходе.`;
+      },
+      input: s.object({
+        request_text: s.string({
+          description: "Полная исходная реплика пользователя дословно; нужна как контекст намерения рассылки",
+          minLength: 1,
+          maxLength: 6000,
+        }),
+        recipients: s.array(s.string({
+          description: "Имя, точное название Telegram-чата или @username без текста сообщения",
+          minLength: 1,
+          maxLength: 160,
+        }), {
+          description: "Явно названные получатели; пустой список допустим, если указана папка",
+          maxItems: 10,
+        }).optional(),
+        folders: s.array(s.string({
+          description: "Название папки Telegram без служебных слов",
+          minLength: 1,
+          maxLength: 160,
+        }), {
+          description: "Названные папки Telegram; пустой список допустим, если указаны отдельные чаты",
+          maxItems: 10,
+        }).optional(),
+        message: s.string({
+          description: "Только одинаковый текст, который нужно отправить каждому итоговому чату",
+          minLength: 1,
+          maxLength: 4096,
+        }),
+      }),
+      run: ({ request_text, recipients, folders, message }) =>
+        bridge.prepareBroadcastMessage(request_text, recipients ?? [], folders ?? [], message),
+    }),
+    confirm_telegram_broadcast: tool({
+      description: "Молча подтвердить или отменить всю последнюю Telegram-рассылку только отдельным следующим ходом после явного ответа пользователя «да» или «нет». Никогда не вызывай этот инструмент в ходе создания черновика. После вызова ответь ровно текстом результата без дополнений.",
+      input: s.object({
+        confirmed: s.boolean({
+          description: "true только при явном согласии отправить показанную рассылку всем перечисленным чатам; false при отказе",
+        }),
+      }),
+      run: ({ confirmed }) => bridge.confirmBroadcastMessage(confirmed),
     }),
   },
 
