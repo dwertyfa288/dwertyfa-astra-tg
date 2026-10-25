@@ -9,11 +9,13 @@ TG for Astra connects a personal Telegram account to Astra. The plugin monitors 
 - Monitoring of up to 1000 chats at the same time, with a one-click "monitor every chat" action.
 - A privacy toggle that masks the account name and phone number; the state is kept in the plugin's own state file.
 - A panel that lists the chats currently being monitored.
-- A button that writes the two ready-made Astra commands out as an `astra-commands` file to import.
+- A button that writes the ready-made Astra announcement command out as an `astra-commands` file to import.
 - Customizable notification and reply-confirmation messages.
 - Playback of Telegram voice messages in their original audio.
 - Automatic transport selection: Telegram WSS first, followed by a fallback WSS relay.
-- Text replies after a command word, for example `Astra, write I will be there soon`.
+- Immediate replies to incoming messages through an AI tool, for example `Astra, tell him I will be there soon`. No separate reply command or send confirmation is needed. The reply phrase and reply window are configurable in the plugin.
+- AI chooses recipients from real Telegram contacts, using names and usernames to interpret inflections, nicknames, Russian/English spellings and speech recognition errors. Ambiguous recipients are clarified; selected chats are addressed by ID.
+- Recent incoming messages have individual reply IDs, so another incoming message cannot redirect a reply that is already being sent.
 - New Telegram messages through Astra AI tools: say, for example, `Astra, write to Andrey that I will be there soon`; Astra shows the resolved chat and draft first, then sends only after a separate confirmation.
 - A customizable phrase for tool-based sending, such as `write` or `write in Telegram`. No Astra command-editor nodes are required for this feature.
 - A separate AI-tool flow for sending one identical message to several existing chats, `@usernames`, Telegram folders, or a mixture of them.
@@ -28,6 +30,10 @@ TG for Astra connects a personal Telegram account to Astra. The plugin monitors 
 The two-step verification password is not stored after login.
 
 Neural selection between several matching auto-reply rules uses Astra's `send_chat_message` permission. Astra may restrict this permission for an unsigned file import; test that branch through Developer Mode/source sideload or install a verified catalog release. Single-rule auto-replies do not need neural selection.
+
+## Updating from command-based replies
+
+Disable or delete the old `тг ответ` command in Astra. Import the updated command file if needed; it contains only `тг` for announcements and voice playback. Replying, sending new messages and broadcasts use AI tools. Ordinary speech is never automatically captured as reply text.
 
 ## Development
 

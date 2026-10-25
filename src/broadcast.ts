@@ -49,7 +49,7 @@ export function planBroadcast(input: {
     const matches = input.dialogs
       .map((candidate) => ({
         candidate,
-        score: Math.max(
+        score: candidate.key === query ? 120 : /^-?\d+$/.test(query) ? 0 : Math.max(
           scoreName(query, [candidate.title]),
           normalizeName(query) === normalizeName(candidate.username ?? "") ? 110 : scoreName(query, [candidate.username]),
         ),

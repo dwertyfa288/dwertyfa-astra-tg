@@ -3,7 +3,7 @@
   "version": 1,
   "commands": [
     {
-      "name": "тг ",
+      "name": "тг",
       "enabled": true,
       "triggers": [
         {
@@ -94,78 +94,6 @@
             "source_node": "node_6_1788215933613",
             "source_port": "default",
             "target_node": "node_6_1788272098428",
-            "target_port": "default"
-          }
-        ]
-      },
-      "execution": {
-        "max_steps": null,
-        "max_loop_iterations": null,
-        "timeout_seconds": null
-      },
-      "slash_enabled": false,
-      "slash_description": ""
-    },
-    {
-      "name": "тг ответ",
-      "enabled": true,
-      "triggers": [
-        {
-          "case_sensitive": false,
-          "exact_match": false,
-          "phrases": [
-            "ответь"
-          ],
-          "type": "text"
-        }
-      ],
-      "actions": [
-        {
-          "type": "plugin__dwertyfa_astra_tg__capture_reply_command"
-        }
-      ],
-      "description": "",
-      "tags": [],
-      "editor_mode": "graph",
-      "workflow": {
-        "nodes": [
-          {
-            "id": "node_2_1788259390161",
-            "node_type": "trigger",
-            "data": {
-              "config": {
-                "exact_match": false,
-                "phrases": [
-                  "ответь"
-                ]
-              },
-              "trigger_type": "text"
-            },
-            "label": "",
-            "position_x": 369.5,
-            "position_y": 134
-          },
-          {
-            "id": "node_7_1788272148548",
-            "node_type": "action",
-            "data": {
-              "config": {},
-              "action": {
-                "type": "plugin__dwertyfa_astra_tg__capture_reply_command"
-              },
-              "action_type": "plugin__dwertyfa_astra_tg__capture_reply_command"
-            },
-            "label": "",
-            "position_x": 335,
-            "position_y": 235
-          }
-        ],
-        "edges": [
-          {
-            "id": "xy-edge__node_2_1788259390161-node_7_1788272148548",
-            "source_node": "node_2_1788259390161",
-            "source_port": "default",
-            "target_node": "node_7_1788272148548",
             "target_port": "default"
           }
         ]

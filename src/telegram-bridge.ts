@@ -34,10 +34,6 @@ import {
   applyTemplate,
   type ChatInfo,
   defaultState,
-  extractReplyAfterCommandWord,
-  extractSpeechText,
-  isFinalSpeech,
-  matchReplyCommand,
   MAX_SELECTED_CHATS,
   MAX_VOICE_BYTES,
   type PersistedState,
@@ -67,6 +63,12 @@ interface Deferred<T> {
 }
 
 interface PendingReply {
+  id: string;
+  message: string;
+  chatId: string;
+  senderId: string;
+  senderUsername: string;
+  chatUsername: string;
   peer: any;
   sender: string;
   chat: string;
@@ -97,11 +99,6 @@ interface AutoResponderStatus {
   phase: "disabled" | "waiting" | "active";
   recipients: number;
   repliesSent: number;
-}
-
-interface RecentSpeech {
-  text: string;
-  recognizedAt: number;
 }
 
 interface TelegramCredentials {
@@ -157,14 +154,13 @@ export class TelegramBridge {
   private codeWatchdog?: NodeJS.Timeout;
   private lastActivity = "Плагин запущен";
   private pendingReply?: PendingReply;
+  private readonly replyContexts = new Map<string, PendingReply>();
+  private readonly repliesInProgress = new Set<string>();
   private pendingOutgoingMessage?: PendingOutgoingMessage;
   private pendingBroadcast?: PendingBroadcast;
   private broadcastInProgress = false;
   private broadcastStatus: BroadcastStatus = { phase: "idle", total: 0, sent: 0, failed: [] };
   private outgoingSendInProgress = false;
-  private awaitingReplyText = false;
-  private recentSpeech?: RecentSpeech;
-  private captureRequestedUntil = 0;
   private voiceItems = new Map<string, VoiceItem>();
   private cleanupTimer?: NodeJS.Timeout;
   private sessionInvalidated = false;
@@ -205,6 +201,8 @@ export class TelegramBridge {
     this.passwordInput = undefined;
     this.telegramCredentials = undefined;
     this.pendingBroadcast = undefined;
+    this.pendingReply = undefined;
+    this.replyContexts.clear();
     await this.disconnectClient();
   }
 
@@ -260,6 +258,62 @@ export class TelegramBridge {
 
   outgoingCommandPhrase(): string {
     return this.state.preferences.sendCommandPhrase;
+  }
+
+  replyCommandPhrase(): string {
+    return this.state.preferences.replyCommandPhrase;
+  }
+
+  telegramReplyContext() {
+    this.cleanupExpired();
+    return {
+      messages: [...this.replyContexts.values()].reverse().map((reply) => ({
+        id: reply.id,
+        chat_id: reply.chatId,
+        sender_id: reply.senderId,
+        sender_username: reply.senderUsername,
+        chat_username: reply.chatUsername,
+        sender: reply.sender,
+        chat: reply.chat,
+        message: reply.message,
+        secondsLeft: Math.max(0, Math.ceil((reply.expiresAt - Date.now()) / 1000)),
+      })),
+    };
+  }
+
+  async replyToTelegram(id: string, message: string): Promise<string> {
+    this.cleanupExpired();
+    const pending = this.replyContexts.get(id);
+    if (!pending) return "Сообщение для ответа недоступно или окно ответа истекло. Обновите контекст Telegram.";
+    const text = message.trim();
+    if (!text) return "Что ответить?";
+    if (text.length > 4096) return "Сообщение длиннее 4096 символов.";
+    if (this.repliesInProgress.has(id)) return "Этот ответ уже отправляется.";
+    this.repliesInProgress.add(id);
+    try {
+      await this.sendReply(text, pending);
+      return "";
+    } finally {
+      this.repliesInProgress.delete(id);
+    }
+  }
+
+  async telegramContacts(offset = 0) {
+    const client = this.requireConnected();
+    const dialogs = await this.guardSession(() => client.getDialogs({ limit: MAX_SELECTED_CHATS }));
+    const available = dialogs.filter((dialog: any) => Boolean(dialog?.inputEntity));
+    const start = Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) : 0;
+    return {
+      chats: available.slice(start, start + 100).map((dialog: any) => ({
+        id: safePeerKey(dialog.inputEntity),
+        title: dialogTitle(dialog),
+        name: displayName(dialog.entity, dialogTitle(dialog)),
+        username: String(dialog.entity?.username ?? ""),
+        kind: dialog.isGroup ? "group" : dialog.isChannel ? "channel" : "user",
+      })),
+      nextOffset: start + 100 < available.length ? start + 100 : null,
+      total: available.length,
+    };
   }
 
   broadcastCommandPhrase(): string {
@@ -515,12 +569,10 @@ export class TelegramBridge {
     this.authError = "";
     this.sessionInvalidated = false;
     this.pendingReply = undefined;
+    this.replyContexts.clear();
     this.pendingOutgoingMessage = undefined;
     this.pendingBroadcast = undefined;
     this.outgoingSendInProgress = false;
-    this.awaitingReplyText = false;
-    this.recentSpeech = undefined;
-    this.captureRequestedUntil = 0;
     this.codeInput = undefined;
     this.passwordInput = undefined;
     this.lastActivity = "Вы вышли из Telegram";
@@ -888,53 +940,6 @@ export class TelegramBridge {
     }
   }
 
-  async onSpeechRecognized(payload: Record<string, unknown>): Promise<void> {
-    if (!isFinalSpeech(payload)) return;
-    const spoken = extractSpeechText(payload);
-    if (!spoken) return;
-    this.cleanupExpired();
-    const pending = this.pendingReply;
-    if (!pending) return;
-
-    if (this.awaitingReplyText) {
-      await this.sendReply(spoken, pending);
-      return;
-    }
-
-    this.recentSpeech = { text: spoken, recognizedAt: Date.now() };
-    if (this.captureRequestedUntil >= Date.now()) {
-      this.captureRequestedUntil = 0;
-      this.recentSpeech = undefined;
-      await this.processCapturedReply(spoken, pending);
-    }
-  }
-
-  async captureReplyCommand(): Promise<string> {
-    this.cleanupExpired();
-    const pending = this.pendingReply;
-    if (!pending) return "";
-
-    const recent = this.recentSpeech;
-    if (recent && Date.now() - recent.recognizedAt <= 5_000) {
-      this.recentSpeech = undefined;
-      this.captureRequestedUntil = 0;
-      await this.processCapturedReply(recent.text, pending);
-    } else {
-      this.captureRequestedUntil = Date.now() + 5_000;
-    }
-    return "";
-  }
-
-  private async processCapturedReply(spoken: string, pending: PendingReply): Promise<void> {
-    const reply = extractReplyAfterCommandWord(spoken);
-    if (reply) {
-      await this.sendReply(reply, pending);
-      return;
-    }
-    this.awaitingReplyText = true;
-    this.lastActivity = `Ожидаю текст ответа для ${pending.sender}`;
-  }
-
   private async restoreSession(): Promise<void> {
     try {
       const credentials = await this.fetchTelegramCredentials();
@@ -1084,12 +1089,10 @@ export class TelegramBridge {
     this.authError = invalidatedSessionMessage(code);
     this.lastActivity = this.authError;
     this.pendingReply = undefined;
+    this.replyContexts.clear();
     this.pendingOutgoingMessage = undefined;
     this.state.autoReplyCampaign = undefined;
     this.outgoingSendInProgress = false;
-    this.awaitingReplyText = false;
-    this.recentSpeech = undefined;
-    this.captureRequestedUntil = 0;
     this.voiceItems.clear();
     await this.log("warn", `Telegram invalidated the session (${code}); stored session cleared, re-login required`);
     try {
@@ -1145,14 +1148,20 @@ export class TelegramBridge {
       }
 
       this.pendingReply = {
+        id: randomUUID(),
+        message: values.message,
+        chatId: safePeerKey(peer),
+        senderId: String(message.senderId ?? senderEntity?.id ?? ""),
+        senderUsername: String(senderEntity?.username ?? ""),
+        chatUsername: String(chatEntity?.username ?? ""),
         peer,
         sender,
         chat,
         expiresAt: Date.now() + this.state.preferences.replyWindowSeconds * 1000,
       };
-      this.awaitingReplyText = false;
-      this.recentSpeech = undefined;
-      this.captureRequestedUntil = 0;
+      this.cleanupExpired();
+      this.replyContexts.set(this.pendingReply.id, this.pendingReply);
+      if (this.replyContexts.size > 50) this.replyContexts.delete(this.replyContexts.keys().next().value!);
       const announcement = applyTemplate(
         isVoice ? this.state.preferences.voiceTemplate : this.state.preferences.textTemplate,
         values,
@@ -1286,10 +1295,8 @@ export class TelegramBridge {
   private async sendReply(text: string, pending: PendingReply): Promise<void> {
     const client = this.requireConnected();
     await this.guardSession(() => client.sendMessage(pending.peer, { message: text }));
-    this.pendingReply = undefined;
-    this.awaitingReplyText = false;
-    this.recentSpeech = undefined;
-    this.captureRequestedUntil = 0;
+    this.replyContexts.delete(pending.id);
+    if (this.pendingReply?.id === pending.id) this.pendingReply = [...this.replyContexts.values()].at(-1);
     this.lastActivity = `Ответ отправлен в чат «${pending.chat}»`;
     await this.log("info", `Voice reply sent to Telegram chat ${pending.chat}`);
 
@@ -1425,9 +1432,6 @@ export class TelegramBridge {
     if (!ctx) return Promise.reject(new Error("Astra ещё не подключила контекст плагина"));
     const task = this.detachedScope.runInAsyncScope(() =>
       this.triggerQueue.then(async () => {
-        // Fire on the next event-loop turn. In particular, a confirmation queued
-        // by speech_recognized must not call back into Astra before that inbound
-        // event RPC has returned.
         await new Promise<void>((resolve) => setImmediate(resolve));
         try {
           await ctx.fireTrigger("telegram_message", payload);
@@ -1446,11 +1450,11 @@ export class TelegramBridge {
 
   private cleanupExpired(): void {
     const now = Date.now();
+    for (const [id, reply] of this.replyContexts) {
+      if (reply.expiresAt <= now) this.replyContexts.delete(id);
+    }
     if (this.pendingReply && this.pendingReply.expiresAt <= now) {
-      this.pendingReply = undefined;
-      this.awaitingReplyText = false;
-      this.recentSpeech = undefined;
-      this.captureRequestedUntil = 0;
+      this.pendingReply = [...this.replyContexts.values()].at(-1);
     }
     if (this.pendingOutgoingMessage && this.pendingOutgoingMessage.expiresAt <= now) {
       this.pendingOutgoingMessage = undefined;
@@ -1794,6 +1798,8 @@ function safePeerKey(peer: any): string {
 }
 
 function scoreTelegramRecipient(queryValue: string, dialog: any): number {
+  if (queryValue === safePeerKey(dialog.inputEntity)) return 120;
+  if (/^-?\d+$/.test(queryValue)) return 0;
   const query = normalizeRecipient(queryValue);
   if (!query) return 0;
 

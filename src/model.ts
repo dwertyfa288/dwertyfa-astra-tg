@@ -15,6 +15,7 @@ export interface Preferences {
   textTemplate: string;
   voiceTemplate: string;
   replyWindowSeconds: number;
+  replyCommandPhrase: string;
   replyConfirmationTemplate: string;
   sendCommandPhrase: string;
   broadcastCommandPhrase: string;
@@ -53,6 +54,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   textTemplate: "Вам написал {sender}. {message}",
   voiceTemplate: "Вам прислал голосовое сообщение {sender}",
   replyWindowSeconds: 300,
+  replyCommandPhrase: "ответь",
   replyConfirmationTemplate: "Ответ отправлен.",
   sendCommandPhrase: "напиши",
   broadcastCommandPhrase: "разошли",
@@ -95,6 +97,7 @@ export function sanitizePreferences(value: Partial<Preferences> | undefined): Pr
     textTemplate: cleanText(value?.textTemplate, DEFAULT_PREFERENCES.textTemplate, 500),
     voiceTemplate: cleanText(value?.voiceTemplate, DEFAULT_PREFERENCES.voiceTemplate, 500),
     replyWindowSeconds: clampInteger(value?.replyWindowSeconds, 10, 3600, DEFAULT_PREFERENCES.replyWindowSeconds),
+    replyCommandPhrase: cleanText(value?.replyCommandPhrase, DEFAULT_PREFERENCES.replyCommandPhrase, 80),
     replyConfirmationTemplate: cleanOptionalText(
       value?.replyConfirmationTemplate,
       DEFAULT_PREFERENCES.replyConfirmationTemplate,
@@ -137,68 +140,6 @@ export function applyTemplate(template: string, values: TemplateValues): string 
     .replaceAll("{message}", values.message)
     .replace(/\s+/g, " ")
     .trim();
-}
-
-export function normalizeSpeech(text: string): string {
-  return text
-    .normalize("NFKC")
-    .trim()
-    .replace(/[.!?,;:]+$/u, "")
-    .replace(/\s+/g, " ")
-    .toLocaleLowerCase("ru-RU");
-}
-
-export function matchReplyCommand(
-  spoken: string,
-  configuredTrigger: string,
-): { kind: "none" | "trigger" | "reply"; text: string } {
-  const trigger = normalizeSpeech(configuredTrigger);
-  if (!trigger) return { kind: "none", text: "" };
-  const triggerPattern = trigger
-    .split(/\s+/u)
-    .map(escapeRegExp)
-    .join("\\s+");
-  const replyPattern = new RegExp(
-    `^${triggerPattern}(?:$|[\\s,.:;!?—-]+([\\s\\S]*))$`,
-    "iu",
-  );
-
-  const trimmed = spoken.trim();
-  const candidates = [trimmed];
-  const withoutWakeWord = trimmed.replace(/^(?:астра|astra)[\s,.:;!?—-]+/iu, "").trim();
-  if (withoutWakeWord && withoutWakeWord !== trimmed) candidates.push(withoutWakeWord);
-
-  for (const candidate of candidates) {
-    const match = candidate.normalize("NFKC").match(replyPattern);
-    if (!match) continue;
-    const reply = String(match[1] ?? "").trim();
-    return reply ? { kind: "reply", text: reply } : { kind: "trigger", text: "" };
-  }
-
-  return { kind: "none", text: "" };
-}
-
-export function extractReplyAfterCommandWord(spoken: string): string {
-  const trimmed = spoken.normalize("NFKC").trim();
-  const withoutWakeWord = trimmed.replace(/^(?:астра|astra)[\s,.:;!?—-]+/iu, "").trim();
-  const match = withoutWakeWord.match(/^\S+[\s,.:;!?—-]+([\s\S]+)$/u);
-  return String(match?.[1] ?? "").trim();
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-export function extractSpeechText(payload: Record<string, unknown>): string {
-  const candidate = payload.text ?? payload.transcript ?? payload.utterance ?? payload.phrase;
-  return typeof candidate === "string" ? candidate.trim() : "";
-}
-
-export function isFinalSpeech(payload: Record<string, unknown>): boolean {
-  if (typeof payload.is_final === "boolean") return payload.is_final;
-  if (typeof payload.isFinal === "boolean") return payload.isFinal;
-  if (typeof payload.final === "boolean") return payload.final;
-  return true;
 }
 
 function cleanText(value: unknown, fallback: string, maxLength: number): string {

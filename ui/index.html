@@ -752,7 +752,7 @@
     <section class="overview" aria-label="Состояние плагина">
       <div class="metric"><span class="metric-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M7.5 11a4.5 4.5 0 1 1 9 0v2.5a4.5 4.5 0 0 1-9 0V11Z"/><path d="M5 13.5a7 7 0 0 0 14 0M12 20.5V23"/></svg></span><span class="metric-copy"><span class="metric-label">Аккаунт</span><span id="accountMini" class="metric-value">Проверяем сессию</span></span></div>
       <div class="metric"><span class="metric-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5.5h16v11H9l-5 4v-15Z"/><path d="M8 9h8M8 12.5h5"/></svg></span><span class="metric-copy"><span class="metric-label">Мониторинг</span><span id="chatMini" class="metric-value">Чаты не выбраны</span></span></div>
-      <div class="metric"><span class="metric-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3.2 2M18.5 3v5h-5"/></svg></span><span class="metric-copy"><span class="metric-label">Голосовой ответ</span><span id="replyMini" class="metric-value">Команда задаётся в Astra</span></span></div>
+      <div class="metric"><span class="metric-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3.2 2M18.5 3v5h-5"/></svg></span><span class="metric-copy"><span class="metric-label">Голосовой ответ</span><span id="replyMini" class="metric-value">Ответ через AI tool</span></span></div>
     </section>
 
     <div class="dashboard">
@@ -803,11 +803,12 @@
           <div class="field"><label class="field-label" for="voiceTemplate">Перед голосовым <span class="field-note">Анонс</span></label><textarea id="voiceTemplate" placeholder="Вам прислал голосовое сообщение {sender}"></textarea></div>
         </div>
         <div class="variables"><span>Нажмите, чтобы скопировать</span><button type="button" class="code copy-code" data-copy="{sender}">{sender}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button><button type="button" class="code copy-code" data-copy="{chat}">{chat}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button><button type="button" class="code copy-code" data-copy="{message}">{message}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button></div>
+        <div class="field"><label class="field-label" for="replyCommandPhrase">Фраза для ответа <span class="field-note">AI tool</span></label><input id="replyCommandPhrase" maxlength="80" placeholder="ответь"><p class="hint">Например: «Астра, ответь ему, что буду через час». Это подсказка нейронке: синонимы тоже допустимы, отдельная команда Astra не нужна.</p></div>
         <div class="reply-grid">
-          <div class="field"><label class="field-label" for="replyWindow">Окно ответа <span class="field-note">Сек.</span></label><input id="replyWindow" type="number" min="10" max="3600"><p class="hint">Командное слово задаётся только в текстовом триггере Astra. Например: «Астра, напиши привет».</p></div>
+          <div class="field"><label class="field-label" for="replyWindow">Окно ответа <span class="field-note">Сек.</span></label><input id="replyWindow" type="number" min="10" max="3600"><p class="hint">В течение этого времени можно попросить Astra ответить на входящее. Ответ отправляется сразу, без подтверждения.</p></div>
           <div class="field"><label class="field-label" for="replyConfirmationTemplate">После отправки ответа <span class="field-note">Голос Astra</span></label><textarea id="replyConfirmationTemplate" placeholder="Ответ отправлен."></textarea><p class="hint">Что Astra скажет после успешной отправки в Telegram. Можно использовать {sender}, {chat} и {message}; оставьте поле пустым, чтобы ничего не произносить.</p></div>
         </div>
-        <div class="field tool-send-field"><label class="field-label" for="sendCommandPhrase">Фраза для одного чата <span class="field-note">AI tool</span></label><input id="sendCommandPhrase" maxlength="80" placeholder="напиши"><p class="hint">Например: «Астра, напиши Андрюхе, что буду через час». Фраза помогает нейронке понять намерение, но синонимы вроде «отправь» тоже работают. Перед отправкой Astra обязательно покажет черновик.</p></div>
+        <div class="field tool-send-field"><label class="field-label" for="sendCommandPhrase">Фраза для одного чата <span class="field-note">AI tool</span></label><input id="sendCommandPhrase" maxlength="80" placeholder="напиши"><p class="hint">Например: «Астра, напиши Андрюхе, что буду через час». Нейронка сама выбирает реальный чат, учитывая склонения, варианты имён и русское/английское написание. Если подходят несколько контактов, она уточнит адресата. Перед отправкой Astra обязательно покажет черновик.</p></div>
         <div class="broadcast-panel">
           <div class="broadcast-head"><span class="broadcast-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h11M4 12h8M4 17h6"/><path d="m15 14 5 3-5 3v-6Z"/></svg>Массовая отправка</span><span class="broadcast-badge">до 10 чатов</span></div>
           <div class="broadcast-grid">
@@ -838,11 +839,11 @@
         </div>
         <div class="voice-layout">
           <div>
-            <div class="notice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.7v.6"/></svg><span>Плагин не может создавать команды сам — этот шаг Astra оставляет за вами. Кнопка ниже готовит файл с обеими нужными командами, а <b>«Импорт»</b> в разделе «Команды» добавляет их.</span></div>
+            <div class="notice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.7v.6"/></svg><span>Плагин не может создавать команды сам — этот шаг Astra оставляет за вами. Кнопка ниже готовит файл с командой озвучивания, а <b>«Импорт»</b> в разделе «Команды» добавляет её. Ответы работают через AI tools.</span></div>
             <ol class="steps">
               <li>Нажмите <b>«Подготовить команды»</b>. Плагин сохранит файл <b>tg-astra-commands.astra</b> и покажет полный путь к нему.</li>
               <li>Откройте раздел <b>«Команды»</b> в Astra и выберите <b>«Импорт»</b>, затем укажите этот файл.</li>
-              <li>В списке появятся <b>«тг»</b> и <b>«тг ответ»</b> — озвучивание сообщений и голосовой ответ. Убедитесь, что их переключатели включены; внутри настраивать нечего.</li>
+              <li>В списке появится <b>«тг»</b> — озвучивание сообщений и проигрывание голосовых. Включите её. Если раньше импортировали <b>«тг ответ»</b>, удалите или отключите эту старую команду: она больше не нужна.</li>
             </ol>
             <div class="actions">
               <button id="commandsBtn" class="primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 4v11M8 11.5l4 4 4-4"/><path d="M5 19h14"/></svg>Подготовить команды</button>
@@ -856,12 +857,6 @@
                 <li>Добавьте действие <b>«Произнести»</b>. В поле <b>«Текст»</b> вставьте <button type="button" class="code copy-code" data-copy="{announcement}">{announcement}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button>, включите <b>«Использовать голос из настроек»</b> и оставьте отмеченным <b>«Ждать завершения»</b>.</li>
                 <li>Добавьте действие плагина <b>«Проиграть голосовое Telegram»</b>. Настраивать внутри ничего не нужно: плагин сам берёт следующее загруженное голосовое. Для текстовых сообщений шаг тихо пропускается.</li>
                 <li>Проверьте соединения: <b>Новое сообщение Telegram → Произнести → Проиграть голосовое Telegram</b>. Затем включите переключатель самой команды.</li>
-              </ol>
-              <div class="monitor-row" style="margin-top:18px"><div class="monitor-copy"><strong>Команда ответа</strong><span>Отдельная команда передаёт произнесённый ответ плагину</span></div></div>
-              <ol class="steps" style="margin-top:14px">
-                <li>Создайте <b>вторую команду</b>, например <b>«Ответ Telegram»</b>, и добавьте триггер <b>«Текстовая фраза»</b>.</li>
-                <li>Впишите любое удобное <b>одно командное слово</b>, например <button type="button" class="code copy-code" data-copy="ответь">ответь<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button> или <button type="button" class="code copy-code" data-copy="напиши">напиши<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button>. Отключите точное совпадение, чтобы команда принимала продолжение: «напиши привет».</li>
-                <li>Добавьте единственное действие плагина <b>«Перехватить ответ Telegram»</b>, соедините с триггером и включите команду. Узлы <b>«Произнести»</b> и <b>«Проиграть голосовое»</b> в эту вторую команду добавлять не нужно.</li>
               </ol>
             </div>
           </div>
@@ -1005,6 +1000,7 @@
         $('textTemplate').value = p.textTemplate;
         $('voiceTemplate').value = p.voiceTemplate;
         $('replyWindow').value = p.replyWindowSeconds;
+        $('replyCommandPhrase').value = p.replyCommandPhrase;
         $('replyConfirmationTemplate').value = p.replyConfirmationTemplate;
         $('sendCommandPhrase').value = p.sendCommandPhrase;
         $('broadcastCommandPhrase').value = p.broadcastCommandPhrase;
@@ -1036,7 +1032,7 @@
       }
       renderAutoResponderStatus(next.autoResponderStatus || {phase:'disabled',recipients:0,repliesSent:0});
       $('chatMini').textContent = p.selectedChatIds.length ? p.selectedChatIds.length + ' из ' + next.maxSelectedChats + ' чатов' : 'Чаты не выбраны';
-      $('replyMini').textContent = 'Команда задаётся в Astra';
+      $('replyMini').textContent = 'Ответ через AI tool';
 
       const top = $('topStatus');
       $('topStatusText').textContent = connected ? (next.monitoring ? 'Мониторинг активен' : 'Telegram подключён') : authStageLabel(next.authStage);
@@ -1425,6 +1421,7 @@
         hideIdentity: privacyHidden,
         textTemplate: $('textTemplate').value,
         voiceTemplate: $('voiceTemplate').value,
+        replyCommandPhrase: $('replyCommandPhrase').value,
         replyWindowSeconds: Number($('replyWindow').value),
         replyConfirmationTemplate: $('replyConfirmationTemplate').value,
         sendCommandPhrase: $('sendCommandPhrase').value,
@@ -1548,7 +1545,7 @@
     $('autoReplyRules').addEventListener('keydown', onAutoReplyRuleKeydown);
     $('autoReplyRules').addEventListener('click', onAutoReplyRuleClick);
     document.querySelectorAll('[data-copy]').forEach((button) => button.addEventListener('click', () => copyValue(button)));
-    ['enabled','textTemplate','voiceTemplate','replyWindow','replyConfirmationTemplate','sendCommandPhrase','broadcastCommandPhrase','broadcastDelayMinSeconds','broadcastDelayMaxSeconds','autoResponderEnabled'].forEach((id) => $(id).addEventListener('input', () => { settingsDirty = true; }));
+    ['enabled','textTemplate','voiceTemplate','replyCommandPhrase','replyWindow','replyConfirmationTemplate','sendCommandPhrase','broadcastCommandPhrase','broadcastDelayMinSeconds','broadcastDelayMaxSeconds','autoResponderEnabled'].forEach((id) => $(id).addEventListener('input', () => { settingsDirty = true; }));
     renderAutoReplyRules();
     renderIdentity();
     refresh();

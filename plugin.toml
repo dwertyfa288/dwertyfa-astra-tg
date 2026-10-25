@@ -1,7 +1,7 @@
 [plugin]
 id = "dwertyfa-astra-tg"
 name = "TG for Astra"
-version = "0.1.15"
+version = "0.1.16"
 description = "Announce selected Telegram chats with Astra and send voice-dictated replies"
 author = "dwertyfa"
 license = "MIT"
@@ -18,7 +18,6 @@ tools = true
 actions = true
 triggers = true
 ui_contributions = true
-event_handlers = true
 
 # `[permissions]` is the other direction: which host RPCs the plugin may call
 # out to. Default-deny — a manifest with no `[permissions]` section may call
@@ -30,5 +29,4 @@ event_handlers = true
 # delete any line you do not actually need.
 [permissions]
 fire_trigger = { reason = "Starts your Telegram announcement command when a selected chat receives a message" }
-subscribe_events = { types = ["speech_recognized"], reason = "Reads final recognized phrases only while a Telegram voice-reply window is open" }
 send_chat_message = { reason = "Chooses one of your saved auto-replies when an incoming Telegram message matches multiple rules" }
