@@ -1020,6 +1020,9 @@ export function renderAppHtml(): string {
       $('authError').textContent = next.authError || '';
       $('codeBlock').hidden = next.authStage !== 'awaiting_code';
       $('codeHint').textContent = codeHint(next);
+      const resendWait = next.codeResendWaitSeconds || 0;
+      $('resendBtn').disabled = !next.codeResendAllowed || resendWait > 0;
+      $('resendBtn').textContent = resendWait > 0 ? 'Повторить через ' + resendWait + ' сек.' : (next.codeResendAllowed ? 'Запросить код повторно' : 'Повтор недоступен');
       $('passwordBlock').hidden = next.authStage !== 'awaiting_password';
       $('passwordHint').textContent = next.passwordHint ? 'Подсказка Telegram: ' + next.passwordHint : '';
       $('maxChats').textContent = next.maxSelectedChats;
@@ -1383,7 +1386,7 @@ export function renderAppHtml(): string {
 
     function codeHint(next) {
       if (next.codeDelivery === 'app') {
-        return 'Код отправлен в приложение Telegram на устройстве, где вы уже вошли — ищите чат «Telegram». По SMS он в этом случае не приходит.';
+        return 'Telegram указал доставку в приложение — ищите служебный чат «Telegram» в аккаунте с номером ' + (next.phone || 'из формы') + '. Это ответ на запрос, а не подтверждение получения кода. ' + (next.codeNextDelivery ? 'Если код не появится, после таймера можно запросить его повторно' + (next.codeNextDelivery === 'sms' ? ' по SMS.' : '.') : 'Другой способ доставки Telegram для этой попытки не предложил.');
       }
       if (next.codeDelivery === 'sms') return 'Код отправлен по SMS на ' + (next.phone || 'указанный номер') + '.';
       if (next.codeDelivery === 'call') return 'Telegram позвонит и продиктует код.';
@@ -1488,7 +1491,7 @@ export function renderAppHtml(): string {
       const button=$('resendBtn');
       setBusy(button,true);
       try {
-        const result=await api('beginLogin',{phone:$('phone').value || (state && state.phone) || ''},30000);
+        const result=await api('resendLoginCode',{},30000);
         $('code').value='';
         renderState(result.state);
         toast('Запросили код заново');

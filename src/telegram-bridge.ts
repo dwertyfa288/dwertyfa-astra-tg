@@ -76,6 +76,12 @@ interface PendingReply {
   expiresAt: number;
 }
 
+interface LoginCode {
+  phoneCodeHash: string;
+  nextType: string;
+  resendAvailableAt: number;
+}
+
 interface PendingOutgoingMessage {
   peer: any;
   recipient: string;
@@ -131,6 +137,9 @@ export interface PublicState {
   lastActivity: string;
   /** Where Telegram said it put the login code, once it has said so. */
   codeDelivery: "" | "app" | "sms" | "call";
+  codeNextDelivery: string;
+  codeResendWaitSeconds: number;
+  codeResendAllowed: boolean;
   replyTarget: null | { sender: string; chat: string; secondsLeft: number };
   broadcastStatus: BroadcastStatus;
   autoResponderStatus: AutoResponderStatus;
@@ -151,6 +160,8 @@ export class TelegramBridge {
   private passwordHint = "";
   private accountName = "";
   private codeDelivery: "" | "app" | "sms" | "call" = "";
+  private loginCode?: LoginCode;
+  private resendInProgress = false;
   private loginAttempt = 0;
   private codeWatchdog?: NodeJS.Timeout;
   private lastActivity = "Плагин запущен";
@@ -194,6 +205,8 @@ export class TelegramBridge {
   }
 
   async stop(): Promise<void> {
+    this.loginAttempt++;
+    this.loginCode = undefined;
     if (this.cleanupTimer) clearInterval(this.cleanupTimer);
     this.cleanupTimer = undefined;
     this.codeInput?.reject(new Error("Plugin stopped"));
@@ -236,6 +249,9 @@ export class TelegramBridge {
       maxSelectedChats: MAX_SELECTED_CHATS,
       lastActivity: this.lastActivity,
       codeDelivery: this.codeDelivery,
+      codeNextDelivery: (this.loginCode?.nextType ?? "").replace(/^auth\.CodeType/, "").toLowerCase(),
+      codeResendWaitSeconds: Math.max(0, Math.ceil(((this.loginCode?.resendAvailableAt ?? 0) - now) / 1000)),
+      codeResendAllowed: this.authStage === "awaiting_code" && Boolean(this.loginCode?.nextType) && !this.resendInProgress,
       replyTarget,
       broadcastStatus: {
         ...this.broadcastStatus,
@@ -387,6 +403,9 @@ export class TelegramBridge {
 
   async beginLogin(phoneValue: unknown): Promise<PublicState> {
     const phone = normalizeTelegramPhone(phoneValue);
+    if (this.state.phone === phone && ["sending_code", "awaiting_code", "verifying_code", "awaiting_password", "verifying_password"].includes(this.authStage)) {
+      return this.publicState();
+    }
 
     // Pressing the button again restarts the login rather than being refused.
     // A first attempt that produced no code leaves this plugin sitting in
@@ -405,6 +424,8 @@ export class TelegramBridge {
     this.authError = "";
     this.passwordHint = "";
     this.codeDelivery = "";
+    this.loginCode = undefined;
+    this.resendInProgress = false;
     this.authStage = "sending_code";
     this.sessionInvalidated = false;
     this.codeInput = undefined;
@@ -476,56 +497,147 @@ export class TelegramBridge {
       return;
     }
 
-    await client
-      .signInUser(
-        { apiId: credentials.apiId, apiHash: credentials.apiHash },
-        {
+    const sendCode = () => client.invoke(new Api.auth.SendCode({
+      phoneNumber: phone,
+      apiId: credentials.apiId,
+      apiHash: credentials.apiHash,
+      settings: new Api.CodeSettings({}),
+    }));
+    let sent: Api.auth.TypeSentCode;
+    try {
+      sent = await sendCode();
+    } catch (error) {
+      if (!errorText(error).toUpperCase().includes("AUTH_RESTART") || attempt !== this.loginAttempt || this.client !== client) throw error;
+      sent = await sendCode();
+    }
+    if (attempt !== this.loginAttempt || this.client !== client) return;
+    if (sent instanceof Api.auth.SentCodeSuccess) {
+      await this.finishAuthorization(client);
+      return;
+    }
+    this.acceptLoginCode(sent, attempt);
+    while (attempt === this.loginAttempt && this.client === client) {
+      if (!this.codeInput || this.codeInput.settled) this.codeInput = deferred<string>();
+      this.authStage = "awaiting_code";
+      const phoneCode = await this.codeInput.promise;
+      if (attempt !== this.loginAttempt || this.client !== client || !this.loginCode) return;
+      try {
+        const result = await client.invoke(new Api.auth.SignIn({
           phoneNumber: phone,
-          phoneCode: async (isCodeViaApp?: boolean) => {
-            if (attempt !== this.loginAttempt) throw new Error("Вход отменён");
-            this.clearCodeWatchdog();
-            this.codeDelivery = isCodeViaApp ? "app" : "sms";
-            this.codeInput = deferred<string>();
-            this.authStage = "awaiting_code";
-            this.lastActivity = isCodeViaApp
-              ? "Telegram отправил код в приложение Telegram на другом устройстве"
-              : `Telegram отправил код по SMS на ${phone}`;
-            await this.log("info", `Telegram sent the login code via ${isCodeViaApp ? "the Telegram app" : "SMS"}`);
-            return this.codeInput.promise;
-          },
-          password: async (hint?: string) => {
-            if (attempt !== this.loginAttempt) throw new Error("Вход отменён");
-            this.passwordHint = hint ?? "";
-            this.passwordInput = deferred<string>();
-            this.authStage = "awaiting_password";
-            this.lastActivity = "Telegram запросил пароль двухэтапной аутентификации";
-            return this.passwordInput.promise;
-          },
-          firstAndLastNames: async () => {
-            throw new Error("Новый Telegram-аккаунт нужно сначала создать в официальном приложении");
-          },
-          onError: async (error: Error) => {
-            if (attempt !== this.loginAttempt) return true;
-            const raw = errorText(error).toUpperCase();
-            const canRetry = raw.includes("PHONE_CODE_INVALID") || raw.includes("PASSWORD_HASH_INVALID");
-            if (canRetry) {
-              this.authError = friendlyTelegramError(error);
-              this.lastActivity = `Ошибка входа: ${this.authError}`;
-              return false;
-            }
-            this.failAuth(error, attempt);
-            return true;
-          },
-        },
-      )
-      .then(async () => this.finishAuthorization(client))
-      .catch((error: unknown) => {
-        if (attempt === this.loginAttempt && this.authStage !== "error") this.failAuth(error, attempt);
-      });
+          phoneCodeHash: this.loginCode!.phoneCodeHash,
+          phoneCode,
+        }));
+        if (result instanceof Api.auth.AuthorizationSignUpRequired) {
+          throw new Error("Новый Telegram-аккаунт нужно сначала создать в официальном приложении");
+        }
+        await this.finishAuthorization(client);
+        return;
+      } catch (error) {
+        if (attempt !== this.loginAttempt || this.client !== client) return;
+        const raw = errorText(error).toUpperCase();
+        if (raw.includes("SESSION_PASSWORD_NEEDED")) {
+          await client.signInWithPassword(
+            { apiId: credentials.apiId, apiHash: credentials.apiHash },
+            {
+              password: async (hint?: string) => {
+                if (attempt !== this.loginAttempt) throw new Error("Вход отменён");
+                this.passwordHint = hint ?? "";
+                this.passwordInput = deferred<string>();
+                this.authStage = "awaiting_password";
+                this.lastActivity = "Telegram запросил пароль двухэтапной аутентификации";
+                return this.passwordInput.promise;
+              },
+              onError: async (passwordError: Error) => {
+                if (attempt !== this.loginAttempt) return true;
+                if (errorText(passwordError).toUpperCase().includes("PASSWORD_HASH_INVALID")) {
+                  this.authError = friendlyTelegramError(passwordError);
+                  return false;
+                }
+                throw passwordError;
+              },
+            },
+          );
+          if (attempt === this.loginAttempt) await this.finishAuthorization(client);
+          return;
+        }
+        if (!raw.includes("PHONE_CODE_INVALID")) throw error;
+        this.authError = friendlyTelegramError(error);
+        this.lastActivity = `Ошибка входа: ${this.authError}`;
+      }
+    }
+  }
+
+  private acceptLoginCode(result: any, attempt: number): void {
+    if (attempt !== this.loginAttempt) return;
+    if (!(result instanceof Api.auth.SentCode)) {
+      throw new Error(`Telegram не выдал код: ${result?.className ?? "неизвестный ответ"}`);
+    }
+    const type = result.type.className;
+    const nextType = result.nextType?.className ?? "";
+    void this.log("info", `Telegram code request accepted: type=${type}, next=${nextType || "none"}, timeout=${result.timeout ?? 0}s, length=${"length" in result.type ? result.type.length : "unknown"}`);
+    const delivery = type === "auth.SentCodeTypeApp" ? "app"
+      : type === "auth.SentCodeTypeSms" ? "sms"
+      : type === "auth.SentCodeTypeCall" ? "call" : "";
+    if (!delivery) throw new Error(`Telegram выбрал способ входа ${type}. Этот способ пока не поддерживается плагином.`);
+    this.loginCode = {
+      phoneCodeHash: result.phoneCodeHash,
+      nextType,
+      resendAvailableAt: Date.now() + Math.max(0, result.timeout ?? 0) * 1000,
+    };
+    this.codeDelivery = delivery;
+    this.clearCodeWatchdog();
+    if (!this.codeInput || this.codeInput.settled) this.codeInput = deferred<string>();
+    this.authStage = "awaiting_code";
+    this.authError = "";
+    this.lastActivity = delivery === "app"
+      ? "Telegram принял запрос кода и указал доставку в приложение Telegram"
+      : delivery === "sms" ? "Telegram принял запрос кода по SMS" : "Telegram указал доставку кода звонком";
+  }
+
+  async resendLoginCode(): Promise<PublicState> {
+    const login = this.loginCode;
+    const client = this.client;
+    if (this.authStage !== "awaiting_code" || !login || !client) throw new Error("Сначала запросите код входа");
+    if (this.resendInProgress) throw new Error("Повторный запрос уже выполняется");
+    if (!login.nextType) throw new Error("Telegram не предложил другой способ доставки кода для этой попытки");
+    const remaining = Math.ceil((login.resendAvailableAt - Date.now()) / 1000);
+    if (remaining > 0) throw new Error(`Повторный запрос будет доступен через ${remaining} сек.`);
+    const attempt = this.loginAttempt;
+    this.resendInProgress = true;
+    let accepted = false;
+    try {
+      const result = await client.invoke(new Api.auth.ResendCode({ phoneNumber: this.state.phone, phoneCodeHash: login.phoneCodeHash }));
+      accepted = true;
+      if (attempt !== this.loginAttempt || this.client !== client) throw new Error("Вход отменён");
+      if (result instanceof Api.auth.SentCodeSuccess) {
+        const waiting = this.codeInput;
+        await this.finishAuthorization(client);
+        waiting?.resolve("");
+      } else {
+        this.acceptLoginCode(result, attempt);
+      }
+      return this.publicState();
+    } catch (error) {
+      if (attempt === this.loginAttempt) {
+        if (accepted) {
+          this.failAuth(error, attempt);
+        } else {
+          this.authError = friendlyTelegramError(error);
+          const floodSeconds = Number((error as { seconds?: number })?.seconds ?? /FLOOD_WAIT_(\d+)/.exec(errorText(error))?.[1] ?? 0);
+          if (Number.isFinite(floodSeconds) && floodSeconds > 0) login.resendAvailableAt = Date.now() + floodSeconds * 1000;
+          if (errorText(error).includes("SEND_CODE_UNAVAILABLE")) login.nextType = "";
+          void this.log("warn", `Telegram resend rejected: ${errorText(error)}`);
+        }
+      }
+      throw error;
+    } finally {
+      if (attempt === this.loginAttempt) this.resendInProgress = false;
+    }
   }
 
   submitCode(codeValue: unknown): PublicState {
     const code = String(codeValue ?? "").trim().replace(/\s/g, "");
+    if (this.resendInProgress) throw new Error("Дождитесь завершения повторного запроса кода");
     if (this.authStage !== "awaiting_code" || !this.codeInput || this.codeInput.settled) {
       throw new Error("Сейчас код подтверждения не ожидается");
     }
@@ -549,6 +661,10 @@ export class TelegramBridge {
   }
 
   async logout(): Promise<void> {
+    this.loginAttempt++;
+    this.loginCode = undefined;
+    this.codeInput?.reject(new Error("Вы вышли из Telegram"));
+    this.passwordInput?.reject(new Error("Вы вышли из Telegram"));
     const client = this.client;
     if (client) {
       try {
@@ -985,6 +1101,7 @@ export class TelegramBridge {
     const me: any = await client.getMe();
     this.accountName = displayName(me, this.state.phone);
     this.authStage = "connected";
+    this.loginCode = undefined;
     this.authError = "";
     this.passwordHint = "";
     this.sessionInvalidated = false;
@@ -1416,7 +1533,10 @@ export class TelegramBridge {
   private failAuth(error: unknown, attempt?: number): void {
     if (attempt !== undefined && attempt !== this.loginAttempt) return;
     this.clearCodeWatchdog();
+    this.loginCode = undefined;
     this.authStage = "error";
+    this.codeInput?.reject(error);
+    this.codeInput = undefined;
     this.authError = friendlyTelegramError(error);
     this.lastActivity = `Ошибка входа: ${this.authError}`;
     void this.log("warn", `Telegram authorization failed: ${errorText(error)}`);

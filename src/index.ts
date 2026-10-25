@@ -157,6 +157,7 @@ export const app = plugin({
         const value = asRecord(params);
         return { state: await bridge.beginLogin(value.phone) };
       },
+      resendLoginCode: async () => ({ state: await bridge.resendLoginCode() }),
       submitCode: async (params) => ({ state: await bridge.submitCode(asRecord(params).code) }),
       submitPassword: async (params) => ({ state: await bridge.submitPassword(asRecord(params).password) }),
       logout: async () => {

@@ -29,6 +29,8 @@ Reads messages from selected Telegram chats with Astra's voice and plays voice m
 
 The two-step verification password is not stored after login.
 
+Telegram chooses where login codes are delivered. An accepted code request does not prove delivery. If a code does not arrive, the retry button waits for Telegram’s cooldown and uses its offered next delivery method within the same login attempt. The plugin never restarts login just to resend a code; diagnostics record delivery types and delays, without recording codes or login hashes.
+
 Neural selection between several matching auto-reply rules uses Astra's `send_chat_message` permission. Astra may restrict this permission for an unsigned file import; test that branch through Developer Mode/source sideload or install a verified catalog release. Single-rule auto-replies do not need neural selection.
 
 ## Setting up announcements and replies
