@@ -3,7 +3,7 @@
   "version": 1,
   "commands": [
     {
-      "name": "тг",
+      "name": "тг ",
       "enabled": true,
       "triggers": [
         {
@@ -29,21 +29,12 @@
       "workflow": {
         "nodes": [
           {
-            "id": "node_5_1788272072993",
-            "node_type": "trigger",
-            "data": {
-              "config": {},
-              "trigger_type": "plugin__dwertyfa_astra_tg__telegram_message"
-            },
-            "label": "",
-            "position_x": 305,
-            "position_y": 160
-          },
-          {
             "id": "node_6_1788215933613",
             "node_type": "action",
             "data": {
-              "action": {
+              "action_type": "speak",
+              "on_error": "stop",
+              "config": {
                 "text": "{announcement}",
                 "tts_pitch": 1,
                 "tts_speed": 1,
@@ -51,9 +42,7 @@
                 "use_settings_voice": true,
                 "voices": {}
               },
-              "on_error": "stop",
-              "action_type": "speak",
-              "config": {
+              "action": {
                 "text": "{announcement}",
                 "tts_pitch": 1,
                 "tts_speed": 1,
@@ -63,22 +52,33 @@
               }
             },
             "label": "",
-            "position_x": 345,
-            "position_y": 209
+            "position_x": 344.5,
+            "position_y": 216
           },
           {
             "id": "node_6_1788272098428",
             "node_type": "action",
             "data": {
+              "action_type": "plugin__dwertyfa_astra_tg__play_voice_message",
               "action": {
                 "type": "plugin__dwertyfa_astra_tg__play_voice_message"
               },
-              "action_type": "plugin__dwertyfa_astra_tg__play_voice_message",
               "config": {}
             },
             "label": "",
             "position_x": 305,
-            "position_y": 280
+            "position_y": 335
+          },
+          {
+            "id": "node_5_1788272072993",
+            "node_type": "trigger",
+            "data": {
+              "config": {},
+              "trigger_type": "plugin__dwertyfa_astra_tg__telegram_message"
+            },
+            "label": "",
+            "position_x": 305,
+            "position_y": 155
           }
         ],
         "edges": [
@@ -104,7 +104,8 @@
         "timeout_seconds": null
       },
       "slash_enabled": false,
-      "slash_description": ""
+      "slash_description": "",
+      "priority": 4
     }
   ]
 }
