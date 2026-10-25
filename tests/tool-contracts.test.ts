@@ -33,17 +33,17 @@ test("plugin exposes separate tools for preparing and confirming a broadcast", a
   await harness.shutdown();
 });
 
-test("release metadata agrees on version 0.1.16", () => {
+test("release metadata agrees on version 0.1.17", () => {
   const root = join(import.meta.dirname, "..");
   const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   const packageLock = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8"));
   const manifest = readFileSync(join(root, "plugin.toml"), "utf8");
   const manifestVersion = /^version\s*=\s*"([^"]+)"/mu.exec(manifest)?.[1];
 
-  assert.equal(packageJson.version, "0.1.16");
-  assert.equal(packageLock.version, "0.1.16");
-  assert.equal(packageLock.packages[""].version, "0.1.16");
-  assert.equal(manifestVersion, "0.1.16");
+  assert.equal(packageJson.version, "0.1.17");
+  assert.equal(packageLock.version, "0.1.17");
+  assert.equal(packageLock.packages[""].version, "0.1.17");
+  assert.equal(manifestVersion, "0.1.17");
 });
 
 test("manifest requests Astra chat access for ambiguous saved auto-replies", () => {

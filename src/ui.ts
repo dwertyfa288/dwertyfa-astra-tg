@@ -804,7 +804,7 @@ export function renderAppHtml(): string {
         </div>
         <div id="accountLogin">
           <div class="fields">
-            <div class="field full"><label class="field-label" for="phone">Номер телефона <span class="field-note">Международный формат</span></label><input id="phone" autocomplete="tel" placeholder="+7 999 123-45-67"><p class="hint">Если Telegram уже открыт на телефоне или другом устройстве, код придёт <b>в сам Telegram</b> — в чат «Telegram», а не по SMS.</p></div>
+            <div class="field full"><label class="field-label" for="phone">Номер телефона <span class="field-note">+7 или 8</span></label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+79991234567 или 89991234567"><p class="hint">Можно ввести номер через +7 или 8, слитно или с пробелами, скобками и дефисами. Если Telegram уже открыт на телефоне или другом устройстве, код придёт <b>в сам Telegram</b> — в чат «Telegram», а не по SMS.</p></div>
           </div>
           <div class="actions"><button id="sendCodeBtn" class="primary">Продолжить<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M14 7l5 5-5 5"/></svg></button></div>
           <div id="codeBlock" class="auth-stage" hidden><div class="field"><label class="field-label" for="code">Код из Telegram <span class="field-note">Одноразовый</span></label><input id="code" inputmode="numeric" autocomplete="one-time-code" placeholder="•••••"></div><p id="codeHint" class="hint"></p><div class="actions"><button id="codeBtn" class="primary">Подтвердить код</button><button id="resendBtn">Запросить код заново</button></div></div>

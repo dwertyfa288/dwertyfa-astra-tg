@@ -7,6 +7,16 @@ import {
 export const MAX_SELECTED_CHATS = 1000;
 export const MAX_VOICE_BYTES = 20 * 1024 * 1024;
 
+export function normalizeTelegramPhone(value: unknown): string {
+  let phone = String(value ?? "").trim().replace(/[\s()-]/g, "");
+  if (/^8\d{10}$/.test(phone)) phone = `+7${phone.slice(1)}`;
+  else if (/^7\d{10}$/.test(phone)) phone = `+${phone}`;
+  if (!/^\+\d{7,15}$/.test(phone)) {
+    throw new Error("Укажите номер в формате +79991234567 или 89991234567. Пробелы, скобки и дефисы допустимы.");
+  }
+  return phone;
+}
+
 export interface Preferences {
   enabled: boolean;
   selectedChatIds: string[];

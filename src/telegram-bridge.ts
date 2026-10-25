@@ -36,6 +36,7 @@ import {
   defaultState,
   MAX_SELECTED_CHATS,
   MAX_VOICE_BYTES,
+  normalizeTelegramPhone,
   type PersistedState,
   type Preferences,
   sanitizePreferences,
@@ -385,10 +386,7 @@ export class TelegramBridge {
   }
 
   async beginLogin(phoneValue: unknown): Promise<PublicState> {
-    const phone = String(phoneValue ?? "").trim().replace(/[\s()-]/g, "");
-    if (!/^\+\d{7,15}$/.test(phone)) {
-      throw new Error("Телефон укажите в международном формате, например +79991234567");
-    }
+    const phone = normalizeTelegramPhone(phoneValue);
 
     // Pressing the button again restarts the login rather than being refused.
     // A first attempt that produced no code leaves this plugin sitting in
@@ -1025,11 +1023,8 @@ export class TelegramBridge {
         networkSocket: createTelegramTransport({
           relayUrl: credentials.relayUrl,
           accessToken: credentials.accessToken,
-          onMode: (mode) => {
-            const label = mode === "server_relay"
-              ? "защищённый WSS-релей"
-              : "прямой защищённый WSS";
-            void this.log("info", `Telegram transport connected through ${label}`);
+          onMode: () => {
+            void this.log("info", "Telegram transport connected through защищённый WSS-релей");
           },
         }),
       },

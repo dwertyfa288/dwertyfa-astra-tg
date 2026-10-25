@@ -4,7 +4,7 @@ TG for Astra connects a personal Telegram account to Astra. The plugin monitors 
 
 ## Features
 
-- Login with a phone number, Telegram verification code, and two-step verification password.
+- Login with a phone number, Telegram verification code, and two-step verification password. Russian numbers may start with +7, 7 or 8; spaces, parentheses and hyphens are accepted and normalized automatically.
 - Support for private chats, groups, and channels.
 - Monitoring of up to 1000 chats at the same time, with a one-click "monitor every chat" action.
 - A privacy toggle that masks the account name and phone number; the state is kept in the plugin's own state file.
@@ -12,7 +12,7 @@ TG for Astra connects a personal Telegram account to Astra. The plugin monitors 
 - A button that writes the ready-made Astra announcement command out as an `astra-commands` file to import.
 - Customizable notification and reply-confirmation messages.
 - Playback of Telegram voice messages in their original audio.
-- Automatic transport selection: Telegram WSS first, followed by a fallback WSS relay.
+- All Telegram connections use the configured authenticated WSS relay, including login, reconnections and media downloads. The plugin never tries a direct Telegram connection.
 - Immediate replies to incoming messages through an AI tool, for example `Astra, tell him I will be there soon`. No separate reply command or send confirmation is needed. The reply phrase and reply window are configurable in the plugin.
 - AI chooses recipients from real Telegram contacts, using names and usernames to interpret inflections, nicknames, Russian/English spellings and speech recognition errors. Ambiguous recipients are clarified; selected chats are addressed by ID.
 - Recent incoming messages have individual reply IDs, so another incoming message cannot redirect a reply that is already being sent.
