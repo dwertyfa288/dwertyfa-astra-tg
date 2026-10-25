@@ -1,4 +1,4 @@
 {
-  "listing.name": "TG for Astra",
-  "listing.description": "Announce selected Telegram chats with Astra and send voice-dictated replies"
+  "listing.description": "Reads messages from selected Telegram chats with Astra's voice and plays voice messages. Lets you reply and message contacts by voice, find recipients by name, send one message to several chats or a Telegram folder, and set up rule-based auto-replies. Announcement templates and reply phrases are customizable. Works without a VPN through the built-in proxy.",
+  "listing.name": "TG for Astra"
 }
