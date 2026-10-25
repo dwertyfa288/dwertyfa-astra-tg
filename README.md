@@ -31,6 +31,15 @@ The two-step verification password is not stored after login.
 
 Neural selection between several matching auto-reply rules uses Astra's `send_chat_message` permission. Astra may restrict this permission for an unsigned file import; test that branch through Developer Mode/source sideload or install a verified catalog release. Single-rule auto-replies do not need neural selection.
 
+## Setting up announcements and replies
+
+1. Connect your Telegram account and select the chats to monitor.
+2. In **Команды Astra**, prepare and import the command file, then enable the single **тг** command.
+3. To set it up manually, create **тг** and connect these nodes: **Новое сообщение Telegram → Произнести → Проиграть голосовое Telegram**. Set the spoken text to `{announcement}` and use the voice from Astra settings.
+4. Configure announcement templates, the reply phrase and the reply window in **Озвучивание и быстрый ответ** below the command instructions.
+5. Ask Astra to reply to an incoming message, for example **«Ответь ему, что буду через час»**. It uses an AI tool and sends immediately without confirmation. No reply command or text trigger is required.
+6. For a new message, say **«Напиши Андрюхе, что скоро буду»**. AI chooses from actual Telegram contacts and clarifies ambiguous names. New messages and broadcasts still require draft confirmation.
+
 ## Updating from command-based replies
 
 Disable or delete the old `тг ответ` command in Astra. Import the updated command file if needed; it contains only `тг` for announcements and voice playback. Replying, sending new messages and broadcasts use AI tools. Ordinary speech is never automatically captured as reply text.

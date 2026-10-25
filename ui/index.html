@@ -792,9 +792,43 @@
         <div class="actions"><button id="saveChatsBtn" class="primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 4h12l2 2v14H5V4Z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg>Сохранить</button><span id="selectedCount" class="count selected-summary">0 / 1000</span></div>
       </section>
 
-      <section class="card settings-card wide" style="--delay:.26s">
+      <section class="card voice-card wide" style="--delay:.26s">
         <div class="card-head">
-          <div class="section-title"><span class="section-index">03</span><div><h2>Озвучивание и быстрый ответ</h2><p class="subtitle">Настройте анонсы, ответы и отправку через AI tools</p></div></div>
+          <div class="section-title"><span class="section-index">03</span><div><h2>Команды Astra</h2><p class="subtitle">Настройте озвучивание входящих: импортируйте одну команду или соберите её вручную</p></div></div>
+          <span class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55"><path d="M4 12h2l2-6 4 12 3-9 2 3h3"/></svg></span>
+        </div>
+        <div class="voice-layout">
+          <div>
+            <div class="notice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.7v.6"/></svg><span>Плагин не может создавать команды сам — этот шаг Astra оставляет за вами. Кнопка ниже готовит файл с командой озвучивания, а <b>«Импорт»</b> в разделе «Команды» добавляет её. Ответы работают через AI tools.</span></div>
+            <ol class="steps">
+              <li>Нажмите <b>«Подготовить команды»</b>. Плагин сохранит файл <b>tg-astra-commands.astra</b> и покажет полный путь к нему.</li>
+              <li>Откройте раздел <b>«Команды»</b> в Astra и выберите <b>«Импорт»</b>, затем укажите этот файл.</li>
+              <li>В списке появится <b>«тг»</b> — озвучивание сообщений и проигрывание голосовых. Включите её. Если раньше импортировали <b>«тг ответ»</b>, удалите или отключите эту старую команду: она больше не нужна.</li>
+            </ol>
+            <div class="actions">
+              <button id="commandsBtn" class="primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 4v11M8 11.5l4 4 4-4"/><path d="M5 19h14"/></svg>Подготовить команды</button>
+              <button id="manualBtn" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M4 12h16M4 17h10"/></svg>Собрать вручную</button>
+            </div>
+            <p id="commandsResult" class="hint"></p>
+            <div id="manualBlock" hidden>
+              <div class="monitor-row" style="margin-top:18px"><div class="monitor-copy"><strong>Команда озвучивания</strong><span>Нужна одна команда «тг» с тремя соединёнными узлами</span></div></div>
+              <ol class="steps" style="margin-top:14px">
+                <li>Откройте <b>«Команды»</b>, создайте одну команду <b>«тг»</b> и нажмите <b>«+ Узлы» → «Новое сообщение Telegram»</b>. Внутри триггера ничего вводить не нужно — оставьте статус <b>«Включён»</b>.</li>
+                <li>Добавьте действие <b>«Произнести»</b>. В поле <b>«Текст»</b> вставьте <button type="button" class="code copy-code" data-copy="{announcement}">{announcement}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button>, включите <b>«Использовать голос из настроек»</b> и оставьте отмеченным <b>«Ждать завершения»</b>.</li>
+                <li>Добавьте действие плагина <b>«Проиграть голосовое Telegram»</b>. Настраивать внутри ничего не нужно: плагин сам берёт следующее загруженное голосовое. Для текстовых сообщений шаг тихо пропускается.</li>
+                <li>Проверьте соединения: <b>Новое сообщение Telegram → Произнести → Проиграть голосовое Telegram</b>. Затем включите переключатель самой команды. Шаблоны озвучивания задаются в блоке <b>«Озвучивание и быстрый ответ»</b> ниже.</li>
+              </ol>
+              <p class="hint">Отдельную команду ответа и текстовый триггер создавать не нужно. Если осталась старая <b>«тг ответ»</b>, отключите или удалите её. После входящего скажите, например: <b>«Астра, ответь ему, что буду через час»</b> — нейронка выберет инструмент и отправит ответ сразу, без подтверждения. Фраза и окно ответа настраиваются ниже.</p>
+              <p class="hint">Для нового сообщения скажите <b>«Астра, напиши Андрюхе, что скоро буду»</b>. Нейронка сама сопоставит имя с реальными контактами; при неоднозначности уточнит адресата. Новые сообщения и рассылки отправляются после подтверждения черновика.</p>
+            </div>
+          </div>
+          <div class="voice-orb-wrap" aria-hidden="true"><div class="voice-orb"><span class="waveform"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div><span class="voice-caption">Astra voice engine</span></div>
+        </div>
+      </section>
+
+      <section class="card settings-card wide" style="--delay:.32s">
+        <div class="card-head">
+          <div class="section-title"><span class="section-index">04</span><div><h2>Озвучивание и быстрый ответ</h2><p class="subtitle">Настройте анонсы, ответы и отправку через AI tools</p></div></div>
           <span class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55"><path d="M12 3a4 4 0 0 0-4 4v5a4 4 0 0 0 8 0V7a4 4 0 0 0-4-4Z"/><path d="M5 11.5a7 7 0 0 0 14 0M12 18.5V22M8.5 22h7"/></svg></span>
         </div>
         <div class="monitor-row"><div class="monitor-copy"><strong>Фоновый мониторинг</strong><span>Плагин реагирует только на выбранные выше чаты</span></div><label class="toggle" aria-label="Мониторинг включён"><input id="enabled" type="checkbox"><span class="switch"></span></label></div>
@@ -830,38 +864,6 @@
         </div>
         <div class="actions"><button id="saveSettingsBtn" class="primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 4h12l2 2v14H5V4Z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg>Сохранить настройки</button></div>
         <p id="activity" class="activity">Ожидаем состояние плагина</p>
-      </section>
-
-      <section class="card voice-card wide" style="--delay:.32s">
-        <div class="card-head">
-          <div class="section-title"><span class="section-index">04</span><div><h2>Команды Astra</h2><p class="subtitle">Готовая связка триггеров и действий — добавляется одним файлом</p></div></div>
-          <span class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55"><path d="M4 12h2l2-6 4 12 3-9 2 3h3"/></svg></span>
-        </div>
-        <div class="voice-layout">
-          <div>
-            <div class="notice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.7v.6"/></svg><span>Плагин не может создавать команды сам — этот шаг Astra оставляет за вами. Кнопка ниже готовит файл с командой озвучивания, а <b>«Импорт»</b> в разделе «Команды» добавляет её. Ответы работают через AI tools.</span></div>
-            <ol class="steps">
-              <li>Нажмите <b>«Подготовить команды»</b>. Плагин сохранит файл <b>tg-astra-commands.astra</b> и покажет полный путь к нему.</li>
-              <li>Откройте раздел <b>«Команды»</b> в Astra и выберите <b>«Импорт»</b>, затем укажите этот файл.</li>
-              <li>В списке появится <b>«тг»</b> — озвучивание сообщений и проигрывание голосовых. Включите её. Если раньше импортировали <b>«тг ответ»</b>, удалите или отключите эту старую команду: она больше не нужна.</li>
-            </ol>
-            <div class="actions">
-              <button id="commandsBtn" class="primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 4v11M8 11.5l4 4 4-4"/><path d="M5 19h14"/></svg>Подготовить команды</button>
-              <button id="manualBtn" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M4 12h16M4 17h10"/></svg>Собрать вручную</button>
-            </div>
-            <p id="commandsResult" class="hint"></p>
-            <div id="manualBlock" hidden>
-              <div class="monitor-row" style="margin-top:18px"><div class="monitor-copy"><strong>Команда озвучивания</strong><span>То же, что делает импорт, но узлами вручную</span></div></div>
-              <ol class="steps" style="margin-top:14px">
-                <li>Откройте <b>«Команды»</b>, создайте или выберите команду и нажмите <b>«+ Узлы» → «Новое сообщение Telegram»</b>. Внутри триггера ничего вводить не нужно — оставьте статус <b>«Включён»</b>.</li>
-                <li>Добавьте действие <b>«Произнести»</b>. В поле <b>«Текст»</b> вставьте <button type="button" class="code copy-code" data-copy="{announcement}">{announcement}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button>, включите <b>«Использовать голос из настроек»</b> и оставьте отмеченным <b>«Ждать завершения»</b>.</li>
-                <li>Добавьте действие плагина <b>«Проиграть голосовое Telegram»</b>. Настраивать внутри ничего не нужно: плагин сам берёт следующее загруженное голосовое. Для текстовых сообщений шаг тихо пропускается.</li>
-                <li>Проверьте соединения: <b>Новое сообщение Telegram → Произнести → Проиграть голосовое Telegram</b>. Затем включите переключатель самой команды.</li>
-              </ol>
-            </div>
-          </div>
-          <div class="voice-orb-wrap" aria-hidden="true"><div class="voice-orb"><span class="waveform"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span></div><span class="voice-caption">Astra voice engine</span></div>
-        </div>
       </section>
     </div>
     <footer class="footer"><span class="footer-brand"><i></i>Astra Telegram Bridge</span><span>Личная MTProto-сессия хранится локально</span></footer>
