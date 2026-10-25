@@ -4,6 +4,20 @@ export interface UiAutoReplyRule {
   response: string;
 }
 
+export function loginTimerView(
+  state: { codeRequestedAt: number; codeResendWaitSeconds: number; codeResendAllowed: boolean },
+  now: number,
+  receivedAt: number,
+): { text: string; disabled: boolean } {
+  const elapsed = Math.max(0, Math.floor((now - state.codeRequestedAt) / 1000));
+  const remaining = Math.max(0, state.codeResendWaitSeconds - Math.floor(Math.max(0, now - receivedAt) / 1000));
+  const seconds = state.codeResendAllowed && remaining > 0 ? remaining : elapsed;
+  const time = String(Math.floor(seconds / 60)).padStart(2, "0") + ":" + String(seconds % 60).padStart(2, "0");
+  if (!state.codeResendAllowed) return { text: "Ждём код · " + time, disabled: true };
+  if (remaining > 0) return { text: "Повтор через " + time, disabled: true };
+  return { text: "Запросить код повторно", disabled: false };
+}
+
 export function consumeAutoReplyTriggerInput(
   value: string,
   commitAll: boolean,
@@ -766,6 +780,9 @@ export function renderAppHtml(): string {
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
     }
+    .qr-image { display: block; width: min(100%, 280px); height: auto; aspect-ratio: 1; background: #fff; border-radius: var(--radius-control); }
+    .qr-timer, #resendBtn { font-variant-numeric: tabular-nums; }
+    #resendBtn:disabled { opacity: 1; color: var(--text-soft); cursor: default; }
   </style>
 </head>
 <body>
@@ -806,8 +823,9 @@ export function renderAppHtml(): string {
           <div class="fields">
             <div class="field full"><label class="field-label" for="phone">Номер телефона <span class="field-note">+7 или 8</span></label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+79991234567 или 89991234567"><p class="hint">Можно ввести номер через +7 или 8, слитно или с пробелами, скобками и дефисами. Если Telegram уже открыт на телефоне или другом устройстве, код придёт <b>в сам Telegram</b> — в чат «Telegram», а не по SMS.</p></div>
           </div>
-          <div class="actions"><button id="sendCodeBtn" class="primary">Продолжить<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M14 7l5 5-5 5"/></svg></button></div>
-          <div id="codeBlock" class="auth-stage" hidden><div class="field"><label class="field-label" for="code">Код из Telegram <span class="field-note">Одноразовый</span></label><input id="code" inputmode="numeric" autocomplete="one-time-code" placeholder="•••••"></div><p id="codeHint" class="hint"></p><div class="actions"><button id="codeBtn" class="primary">Подтвердить код</button><button id="resendBtn">Запросить код заново</button></div></div>
+          <div class="actions"><button id="sendCodeBtn" class="primary">Продолжить<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M14 7l5 5-5 5"/></svg></button><button id="qrLoginBtn" type="button">Войти по QR-коду</button></div>
+          <div id="qrBlock" class="auth-stage" hidden><p class="hint">Откройте Telegram на телефоне: <b>Настройки → Устройства → Подключить устройство</b>. Отсканируйте QR-код и подтвердите вход.</p><img id="qrImage" class="qr-image" alt="QR-код для входа в Telegram" width="280" height="280" hidden><p id="qrStatus" class="hint qr-timer" role="timer" aria-live="off">Получаем QR-код…</p><button id="cancelQrBtn" type="button">Вернуться к входу по номеру</button></div>
+          <div id="codeBlock" class="auth-stage" hidden><div class="field"><label class="field-label" for="code">Код из Telegram <span class="field-note">Одноразовый</span></label><input id="code" inputmode="numeric" autocomplete="one-time-code" placeholder="•••••"></div><p id="codeHint" class="hint"></p><p class="hint">Если код не приходит, можно войти по QR-коду — кнопка находится рядом с «Продолжить».</p><div class="actions"><button id="codeBtn" class="primary">Подтвердить код</button><button id="resendBtn">Запросить код заново</button></div></div>
           <div id="passwordBlock" class="auth-stage" hidden><div class="field"><label class="field-label" for="password">Пароль 2FA <span class="field-note">Не сохраняется</span></label><input id="password" type="password" autocomplete="current-password" placeholder="Пароль двухэтапной защиты"></div><div id="passwordHint" class="hint"></div><div class="actions"><button id="passwordBtn" class="primary">Войти в аккаунт</button></div></div>
           <div id="authError" class="error"></div>
         </div>
@@ -914,6 +932,8 @@ export function renderAppHtml(): string {
     const astra = window.astra;
     const $ = (id) => document.getElementById(id);
     const consumeAutoReplyTriggerInput = ${consumeAutoReplyTriggerInput.toString()};
+    const loginTimerView = ${loginTimerView.toString()};
+    let stateReceivedAt = Date.now();
     const validateAutoReplyRulesForSave = ${validateAutoReplyRulesForSave.toString()};
     let state = null;
     let chats = [];
@@ -1013,6 +1033,7 @@ export function renderAppHtml(): string {
       const previousConnected = state?.connected;
       const previousSelected = new Set(selected);
       state = next;
+      stateReceivedAt = Date.now();
       const connected = next.connected;
       $('accountConnected').hidden = !connected;
       $('accountLogin').hidden = connected;
@@ -1020,9 +1041,7 @@ export function renderAppHtml(): string {
       $('authError').textContent = next.authError || '';
       $('codeBlock').hidden = next.authStage !== 'awaiting_code';
       $('codeHint').textContent = codeHint(next);
-      const resendWait = next.codeResendWaitSeconds || 0;
-      $('resendBtn').disabled = !next.codeResendAllowed || resendWait > 0;
-      $('resendBtn').textContent = resendWait > 0 ? 'Повторить через ' + resendWait + ' сек.' : (next.codeResendAllowed ? 'Запросить код повторно' : 'Повтор недоступен');
+      renderLoginTimers();
       $('passwordBlock').hidden = next.authStage !== 'awaiting_password';
       $('passwordHint').textContent = next.passwordHint ? 'Подсказка Telegram: ' + next.passwordHint : '';
       $('maxChats').textContent = next.maxSelectedChats;
@@ -1381,12 +1400,34 @@ export function renderAppHtml(): string {
     }
 
     function authStageLabel(stage) {
-      return ({logged_out:'Telegram не подключён',restoring:'Восстанавливаем сессию',sending_code:'Отправляем код',awaiting_code:'Ждём код Telegram',verifying_code:'Проверяем код',awaiting_password:'Нужен пароль 2FA',verifying_password:'Проверяем пароль',error:'Ошибка подключения'})[stage] || 'Telegram';
+      return ({logged_out:'Telegram не подключён',restoring:'Восстанавливаем сессию',sending_code:'Отправляем код',preparing_qr:'Получаем QR-код',awaiting_qr:'Ожидаем сканирования QR-кода',awaiting_code:'Ждём код Telegram',verifying_code:'Проверяем код',awaiting_password:'Нужен пароль 2FA',verifying_password:'Проверяем пароль',error:'Ошибка подключения'})[stage] || 'Telegram';
+    }
+
+    function renderLoginTimers() {
+      if (!state) return;
+      const now = Date.now();
+      if (state.authStage === 'awaiting_code') {
+        const timer = loginTimerView(state, now, stateReceivedAt);
+        $('resendBtn').disabled = timer.disabled;
+        $('resendBtn').textContent = timer.text;
+      }
+      const waitingQr = state.authStage === 'preparing_qr' || state.authStage === 'awaiting_qr';
+      $('qrBlock').hidden = !waitingQr;
+      const qr = waitingQr && state.qrLogin && state.qrLogin.expiresAt > now ? state.qrLogin : null;
+      $('qrImage').hidden = !qr;
+      if (qr) {
+        if ($('qrImage').getAttribute('src') !== qr.image) $('qrImage').src = qr.image;
+        $('qrStatus').textContent = 'QR-код обновится через ' + Math.max(0, Math.ceil((qr.expiresAt - now) / 1000)) + ' сек.';
+      } else {
+        $('qrImage').removeAttribute('src');
+        $('qrStatus').textContent = state.authStage === 'preparing_qr' ? 'Получаем QR-код…' : 'Обновляем QR-код…';
+      }
+      $('qrLoginBtn').disabled = waitingQr;
     }
 
     function codeHint(next) {
       if (next.codeDelivery === 'app') {
-        return 'Telegram указал доставку в приложение — ищите служебный чат «Telegram» в аккаунте с номером ' + (next.phone || 'из формы') + '. Это ответ на запрос, а не подтверждение получения кода. ' + (next.codeNextDelivery ? 'Если код не появится, после таймера можно запросить его повторно' + (next.codeNextDelivery === 'sms' ? ' по SMS.' : '.') : 'Другой способ доставки Telegram для этой попытки не предложил.');
+        return 'Telegram указал доставку в приложение — ищите служебный чат «Telegram» в аккаунте с номером ' + (next.phone || 'из формы') + '. Это ответ на запрос, а не подтверждение получения кода. ' + (next.codeNextDelivery ? 'Если код не появится, после таймера можно запросить его повторно' + (next.codeNextDelivery === 'sms' ? ' по SMS.' : '.') : 'Telegram не предложил повторный запрос. Таймер показывает время ожидания, а не срок до разблокировки. Можно войти по QR-коду.');
       }
       if (next.codeDelivery === 'sms') return 'Код отправлен по SMS на ' + (next.phone || 'указанный номер') + '.';
       if (next.codeDelivery === 'call') return 'Telegram позвонит и продиктует код.';
@@ -1487,6 +1528,17 @@ export function renderAppHtml(): string {
     }
 
     $('sendCodeBtn').onclick = async () => { const button=$('sendCodeBtn'); setBusy(button,true); try { const result=await api('beginLogin',{phone:$('phone').value},30000); renderState(result.state); } catch(error){toast(error.message,true);} finally{setBusy(button,false);} };
+    $('qrLoginBtn').onclick = async () => {
+      const button = $('qrLoginBtn');
+      setBusy(button, true);
+      try { const result = await api('beginQrLogin', {}, 30000); renderState(result.state); }
+      catch (error) { toast(error.message, true); }
+      finally { setBusy(button, false); }
+    };
+    $('cancelQrBtn').onclick = async () => {
+      try { const result = await api('cancelQrLogin'); renderState(result.state); }
+      catch (error) { toast(error.message, true); }
+    };
     $('resendBtn').onclick = async () => {
       const button=$('resendBtn');
       setBusy(button,true);
@@ -1587,6 +1639,7 @@ export function renderAppHtml(): string {
     renderIdentity();
     refresh();
     setInterval(refresh, 2500);
+    setInterval(renderLoginTimers, 1000);
   })();
   </script>
 </body>

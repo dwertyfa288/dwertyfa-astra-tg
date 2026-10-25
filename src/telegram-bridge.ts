@@ -8,6 +8,7 @@ import { join } from "node:path";
 
 import type { PluginContext } from "astra-plugin-sdk";
 import { OggOpusDecoder } from "ogg-opus-decoder";
+import QRCode from "qrcode";
 import { Api, TelegramClient } from "teleproto";
 import { NewMessage } from "teleproto/events";
 import { Logger, LogLevel } from "teleproto/extensions/Logger";
@@ -49,6 +50,8 @@ type AuthStage =
   | "logged_out"
   | "restoring"
   | "sending_code"
+  | "preparing_qr"
+  | "awaiting_qr"
   | "awaiting_code"
   | "verifying_code"
   | "awaiting_password"
@@ -77,6 +80,7 @@ interface PendingReply {
 }
 
 interface LoginCode {
+  requestedAt: number;
   phoneCodeHash: string;
   nextType: string;
   resendAvailableAt: number;
@@ -140,6 +144,8 @@ export interface PublicState {
   codeNextDelivery: string;
   codeResendWaitSeconds: number;
   codeResendAllowed: boolean;
+  codeRequestedAt: number;
+  qrLogin: null | { image: string; expiresAt: number };
   replyTarget: null | { sender: string; chat: string; secondsLeft: number };
   broadcastStatus: BroadcastStatus;
   autoResponderStatus: AutoResponderStatus;
@@ -162,6 +168,8 @@ export class TelegramBridge {
   private codeDelivery: "" | "app" | "sms" | "call" = "";
   private loginCode?: LoginCode;
   private resendInProgress = false;
+  private qrLogin?: { image: string; expiresAt: number };
+  private qrAbort?: AbortController;
   private loginAttempt = 0;
   private codeWatchdog?: NodeJS.Timeout;
   private lastActivity = "Плагин запущен";
@@ -206,6 +214,9 @@ export class TelegramBridge {
 
   async stop(): Promise<void> {
     this.loginAttempt++;
+    this.qrAbort?.abort();
+    this.qrAbort = undefined;
+    this.qrLogin = undefined;
     this.loginCode = undefined;
     if (this.cleanupTimer) clearInterval(this.cleanupTimer);
     this.cleanupTimer = undefined;
@@ -252,6 +263,8 @@ export class TelegramBridge {
       codeNextDelivery: (this.loginCode?.nextType ?? "").replace(/^auth\.CodeType/, "").toLowerCase(),
       codeResendWaitSeconds: Math.max(0, Math.ceil(((this.loginCode?.resendAvailableAt ?? 0) - now) / 1000)),
       codeResendAllowed: this.authStage === "awaiting_code" && Boolean(this.loginCode?.nextType) && !this.resendInProgress,
+      codeRequestedAt: this.loginCode?.requestedAt ?? 0,
+      qrLogin: this.authStage === "awaiting_qr" && this.qrLogin && this.qrLogin.expiresAt > now ? { ...this.qrLogin } : null,
       replyTarget,
       broadcastStatus: {
         ...this.broadcastStatus,
@@ -412,7 +425,7 @@ export class TelegramBridge {
     // `sending_code` or `awaiting_code` with nothing the user can do about it,
     // and "вход уже выполняется" is not an answer when no code ever arrived.
     const attempt = ++this.loginAttempt;
-    this.cancelLoginAttempt("Вход начат заново");
+    await this.cancelLoginAttempt("Вход начат заново");
 
     this.lastActivity = "Получаем параметры Telegram с сервера";
     const credentials = await this.fetchTelegramCredentials();
@@ -440,20 +453,89 @@ export class TelegramBridge {
     return this.publicState();
   }
 
-  /**
-   * Abandon whatever the previous attempt was waiting for.
-   *
-   * The deferreds are rejected rather than left hanging, so teleproto's own
-   * `signInUser` loop unwinds instead of holding a socket open behind the new
-   * attempt — two live logins on one account is how a session gets invalidated.
-   */
-  private cancelLoginAttempt(reason: string): void {
+  async beginQrLogin(): Promise<PublicState> {
+    if (this.authStage === "connected") throw new Error("Telegram уже подключён");
+    if (this.qrAbort && ["preparing_qr", "awaiting_qr", "awaiting_password", "verifying_password"].includes(this.authStage)) return this.publicState();
+    const attempt = ++this.loginAttempt;
+    await this.cancelLoginAttempt("Вход по QR-коду начат");
+    if (attempt !== this.loginAttempt) return this.publicState();
+    this.authStage = "preparing_qr";
+    this.authError = "";
+    this.passwordHint = "";
+    this.loginCode = undefined;
+    this.codeDelivery = "";
+    this.qrAbort = new AbortController();
+    const controller = this.qrAbort;
+    this.lastActivity = "Получаем QR-код Telegram";
+    this.authTask = this.detachedScope.runInAsyncScope(async () => {
+      const credentials = await this.fetchTelegramCredentials();
+      if (attempt !== this.loginAttempt || controller.signal.aborted) return;
+      const client = this.createTelegramClient("", credentials);
+      this.client = client;
+      await client.connect();
+      if (attempt !== this.loginAttempt || controller.signal.aborted) return;
+      await client.signInUserWithQrCode(
+        { apiId: credentials.apiId, apiHash: credentials.apiHash },
+        {
+          abortSignal: controller.signal,
+          qrCode: async ({ token, expires }) => {
+            if (attempt !== this.loginAttempt || controller.signal.aborted) return;
+            const image = await QRCode.toDataURL(`tg://login?token=${token.toString("base64url")}`, { width: 280, margin: 4, errorCorrectionLevel: "M" });
+            if (attempt !== this.loginAttempt || controller.signal.aborted) return;
+            if (this.authStage === "awaiting_password" || this.authStage === "verifying_password") return;
+            this.qrLogin = { image, expiresAt: expires * 1000 };
+            this.authStage = "awaiting_qr";
+            this.lastActivity = "Отсканируйте QR-код в Telegram на телефоне и подтвердите вход";
+          },
+          password: async (hint) => {
+            if (attempt !== this.loginAttempt || controller.signal.aborted) throw new Error("Вход отменён");
+            this.qrLogin = undefined;
+            this.passwordHint = hint ?? "";
+            this.passwordInput = deferred<string>();
+            this.authStage = "awaiting_password";
+            this.lastActivity = "Telegram запросил пароль двухэтапной аутентификации";
+            return this.passwordInput.promise;
+          },
+          onError: async (error) => {
+            if (attempt !== this.loginAttempt || controller.signal.aborted) return true;
+            if (errorText(error).toUpperCase().includes("PASSWORD_HASH_INVALID")) {
+              this.authError = friendlyTelegramError(error);
+              return false;
+            }
+            throw error;
+          },
+        },
+      );
+      if (attempt === this.loginAttempt && !controller.signal.aborted) await this.finishAuthorization(client);
+    });
+    void this.authTask.catch((error) => {
+      if (attempt === this.loginAttempt && !controller.signal.aborted) this.failAuth(error, attempt);
+    });
+    return this.publicState();
+  }
+
+  async cancelQrLogin(): Promise<PublicState> {
+    if (!this.qrAbort) return this.publicState();
+    const attempt = ++this.loginAttempt;
+    await this.cancelLoginAttempt("Вход по QR-коду отменён");
+    if (attempt !== this.loginAttempt) return this.publicState();
+    this.authStage = "logged_out";
+    this.authError = "";
+    this.passwordHint = "";
+    this.lastActivity = "Вход по QR-коду отменён";
+    return this.publicState();
+  }
+
+  private cancelLoginAttempt(reason: string): Promise<void> {
     this.clearCodeWatchdog();
+    this.qrAbort?.abort();
+    this.qrAbort = undefined;
+    this.qrLogin = undefined;
     this.codeInput?.reject(new Error(reason));
     this.passwordInput?.reject(new Error(reason));
     this.codeInput = undefined;
     this.passwordInput = undefined;
-    void this.disconnectClient();
+    return this.disconnectClient();
   }
 
   /**
@@ -580,6 +662,7 @@ export class TelegramBridge {
       : type === "auth.SentCodeTypeCall" ? "call" : "";
     if (!delivery) throw new Error(`Telegram выбрал способ входа ${type}. Этот способ пока не поддерживается плагином.`);
     this.loginCode = {
+      requestedAt: Date.now(),
       phoneCodeHash: result.phoneCodeHash,
       nextType,
       resendAvailableAt: Date.now() + Math.max(0, result.timeout ?? 0) * 1000,
@@ -662,6 +745,9 @@ export class TelegramBridge {
 
   async logout(): Promise<void> {
     this.loginAttempt++;
+    this.qrAbort?.abort();
+    this.qrAbort = undefined;
+    this.qrLogin = undefined;
     this.loginCode = undefined;
     this.codeInput?.reject(new Error("Вы вышли из Telegram"));
     this.passwordInput?.reject(new Error("Вы вышли из Telegram"));
@@ -1097,10 +1183,16 @@ export class TelegramBridge {
   private async finishAuthorization(client: TelegramClient): Promise<void> {
     if (this.client !== client) return;
     this.clearCodeWatchdog();
-    this.state.session = String(client.session.save());
+    const session = String(client.session.save());
     const me: any = await client.getMe();
+    if (this.client !== client) return;
+    this.state.session = session;
+    if (typeof me.phone === "string" && /^\d{7,15}$/.test(me.phone)) this.state.phone = `+${me.phone}`;
     this.accountName = displayName(me, this.state.phone);
     this.authStage = "connected";
+    this.qrLogin = undefined;
+    this.qrAbort?.abort();
+    this.qrAbort = undefined;
     this.loginCode = undefined;
     this.authError = "";
     this.passwordHint = "";
@@ -1534,6 +1626,9 @@ export class TelegramBridge {
     if (attempt !== undefined && attempt !== this.loginAttempt) return;
     this.clearCodeWatchdog();
     this.loginCode = undefined;
+    this.qrLogin = undefined;
+    this.qrAbort?.abort();
+    this.qrAbort = undefined;
     this.authStage = "error";
     this.codeInput?.reject(error);
     this.codeInput = undefined;

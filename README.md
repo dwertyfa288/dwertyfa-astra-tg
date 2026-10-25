@@ -4,6 +4,7 @@ Reads messages from selected Telegram chats with Astra's voice and plays voice m
 
 ## Features
 
+- QR login through the official Telegram app on your phone, without waiting for a login code. QR codes refresh automatically and 2FA passwords remain supported.
 - Login with a phone number, Telegram verification code, and two-step verification password. Russian numbers may start with +7, 7 or 8; spaces, parentheses and hyphens are accepted and normalized automatically.
 - Support for private chats, groups, and channels.
 - Monitoring of up to 1000 chats at the same time, with a one-click "monitor every chat" action.
@@ -29,7 +30,7 @@ Reads messages from selected Telegram chats with Astra's voice and plays voice m
 
 The two-step verification password is not stored after login.
 
-Telegram chooses where login codes are delivered. An accepted code request does not prove delivery. If a code does not arrive, the retry button waits for Telegram’s cooldown and uses its offered next delivery method within the same login attempt. The plugin never restarts login just to resend a code; diagnostics record delivery types and delays, without recording codes or login hashes.
+Telegram chooses where login codes are delivered. An accepted code request does not prove delivery. If a code does not arrive, the retry button waits for Telegram’s cooldown and uses its offered next delivery method within the same login attempt. When Telegram offers no retry, the button shows elapsed waiting time instead of a fictional countdown. You can switch to QR login: Telegram on your phone → Settings → Devices → Link Desktop Device, then scan and approve. The plugin never restarts login just to resend a code; diagnostics record delivery types and delays, without recording codes or login hashes.
 
 Neural selection between several matching auto-reply rules uses Astra's `send_chat_message` permission. Astra may restrict this permission for an unsigned file import; test that branch through Developer Mode/source sideload or install a verified catalog release. Single-rule auto-replies do not need neural selection.
 

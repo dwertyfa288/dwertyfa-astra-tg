@@ -196,3 +196,120 @@ test("FLOOD_WAIT from Telegram enforces its retry delay", async () => {
   assert.ok(bridge.publicState().codeResendWaitSeconds > 0);
   await bridge.stop();
 });
+
+test("QR login displays an image and authorizes without requesting a phone code", async () => {
+  const { bridge, client, requests, logs } = setup();
+  assert.equal(typeof bridge.beginQrLogin, "function");
+  let approve!: () => void;
+  const approved = new Promise<void>((resolve) => { approve = resolve; });
+  (client as any).getMe = async () => ({ firstName: "QR Test", phone: "79991234567" });
+  (client as any).signInUserWithQrCode = async (_credentials: any, options: any) => {
+    await options.qrCode({ token: Buffer.from("private-qr-token"), expires: Math.floor(Date.now() / 1000) + 30 });
+    await approved;
+  };
+  await bridge.beginQrLogin();
+  await until(() => bridge.publicState().authStage === "awaiting_qr");
+  assert.match(bridge.publicState().qrLogin.image, /^data:image\/png;base64,/);
+  assert.ok(bridge.publicState().qrLogin.expiresAt > Date.now());
+  assert.equal(bridge.publicState().connected, false);
+  approve();
+  await until(() => bridge.publicState().connected);
+  assert.equal(bridge.publicState().phone, "+79991234567");
+  assert.equal(bridge.publicState().qrLogin, null);
+  assert.equal(requests.some((request) => request instanceof Api.auth.SendCode), false);
+  assert.equal(logs.some((line) => line.includes("private-qr-token") || line.includes("tg://login")), false);
+});
+
+test("cancelled QR callbacks cannot restore a stale QR or authorize", async () => {
+  const { bridge, client } = setup();
+  assert.equal(typeof bridge.beginQrLogin, "function");
+  let callback: any;
+  (client as any).signInUserWithQrCode = async (_credentials: any, options: any) => {
+    callback = options.qrCode;
+    await callback({ token: Buffer.from("first"), expires: Math.floor(Date.now() / 1000) + 30 });
+    await new Promise<void>((_resolve, reject) => options.abortSignal.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
+  };
+  await bridge.beginQrLogin();
+  await until(() => bridge.publicState().authStage === "awaiting_qr");
+  await bridge.cancelQrLogin();
+  await callback({ token: Buffer.from("stale"), expires: Math.floor(Date.now() / 1000) + 30 });
+  assert.equal(bridge.publicState().qrLogin, null);
+  assert.equal(bridge.publicState().connected, false);
+  assert.equal(bridge.publicState().authStage, "logged_out");
+});
+
+test("QR login still requests the account 2FA password", async () => {
+  const { bridge, client } = setup();
+  assert.equal(typeof bridge.beginQrLogin, "function");
+  (client as any).signInUserWithQrCode = async (_credentials: any, options: any) => {
+    await options.qrCode({ token: Buffer.from("qr-password"), expires: Math.floor(Date.now() / 1000) + 30 });
+    assert.equal(await options.password("2FA hint"), "correct-password");
+  };
+  await bridge.beginQrLogin();
+  await until(() => bridge.publicState().authStage === "awaiting_password");
+  assert.equal(bridge.publicState().qrLogin, null);
+  bridge.submitPassword("correct-password");
+  await until(() => bridge.publicState().connected);
+});
+
+test("an in-flight QR render cannot hide the 2FA password form", async () => {
+  const { bridge, client } = setup();
+  let rendered = false;
+  (client as any).signInUserWithQrCode = async (_credentials: any, options: any) => {
+    const rendering = options.qrCode({ token: Buffer.from("racing-qr"), expires: Math.floor(Date.now() / 1000) + 30 });
+    const password = options.password("hint");
+    await rendering;
+    rendered = true;
+    await password;
+  };
+  await bridge.beginQrLogin();
+  await until(() => rendered);
+  assert.equal(bridge.publicState().authStage, "awaiting_password");
+  assert.equal(bridge.publicState().qrLogin, null);
+  await bridge.cancelQrLogin();
+});
+
+test("slow QR cancellation cannot overwrite a newer phone login", async () => {
+  const { bridge, client } = setup();
+  let finishDisconnect!: () => void;
+  client.disconnect = () => new Promise<void>((resolve) => { finishDisconnect = resolve; });
+  (client as any).signInUserWithQrCode = async (_credentials: any, options: any) => {
+    await options.qrCode({ token: Buffer.from("cancel-race"), expires: Math.floor(Date.now() / 1000) + 30 });
+    await new Promise<void>((_resolve, reject) => options.abortSignal.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
+  };
+  await bridge.beginQrLogin();
+  await until(() => bridge.publicState().authStage === "awaiting_qr");
+  const cancelling = bridge.cancelQrLogin();
+  await until(() => Boolean(finishDisconnect));
+  await bridge.beginLogin("89991234567");
+  await until(() => bridge.publicState().authStage === "awaiting_code");
+  finishDisconnect();
+  await cancelling;
+  assert.equal(bridge.publicState().authStage, "awaiting_code");
+  client.disconnect = async () => undefined;
+  await bridge.stop();
+});
+
+test("cancelling QR during account lookup cannot persist the cancelled session", async () => {
+  const { bridge, client } = setup();
+  let approve!: () => void;
+  let finishLookup!: () => void;
+  let lookupStarted = false;
+  const approved = new Promise<void>((resolve) => { approve = resolve; });
+  const lookup = new Promise<void>((resolve) => { finishLookup = resolve; });
+  (client as any).getMe = async () => { lookupStarted = true; await lookup; return { firstName: "Cancelled", phone: "79991234567" }; };
+  (client as any).signInUserWithQrCode = async (_credentials: any, options: any) => {
+    await options.qrCode({ token: Buffer.from("cancel-during-lookup"), expires: Math.floor(Date.now() / 1000) + 30 });
+    await approved;
+  };
+  await bridge.beginQrLogin();
+  await until(() => bridge.publicState().authStage === "awaiting_qr");
+  approve();
+  await until(() => lookupStarted);
+  await bridge.cancelQrLogin();
+  finishLookup();
+  await bridge.authTask;
+  assert.equal(bridge.publicState().connected, false);
+  assert.equal(bridge.publicState().authStage, "logged_out");
+  assert.equal(bridge.state.session, "");
+});

@@ -1,7 +1,7 @@
 {
   "name": "dwertyfa-astra-tg",
-  "version": "0.1.20",
-  "description": "Reads messages from selected Telegram chats with Astra's voice and plays voice messages. Lets you reply and message contacts by voice, find recipients by name, send one message to several chats or a Telegram folder, and set up rule-based auto-replies. Announcement templates and reply phrases are customizable. Works without a VPN through the built-in proxy.",
+  "version": "0.1.21",
+  "description": "Connects by phone number or QR code. Reads messages from selected Telegram chats with Astra's voice and plays voice messages. Lets you reply and message contacts by voice, find recipients by name, send one message to several chats or a Telegram folder, and set up rule-based auto-replies. Announcement templates and reply phrases are customizable. Works without a VPN through the built-in proxy.",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsx scripts/build-ui.ts && tsx scripts/build-plugin.ts",
@@ -17,11 +17,13 @@
     "@grpc/proto-loader": "^0.7.0",
     "astra-plugin-sdk": "^0.7.0",
     "ogg-opus-decoder": "^1.7.5",
+    "qrcode": "^1.5.4",
     "teleproto": "^1.229.0",
     "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@types/qrcode": "^1.5.6",
     "@types/ws": "^8.18.1",
     "esbuild": "^0.28.0",
     "tsx": "^4.0.0",

@@ -158,6 +158,8 @@ export const app = plugin({
         return { state: await bridge.beginLogin(value.phone) };
       },
       resendLoginCode: async () => ({ state: await bridge.resendLoginCode() }),
+      beginQrLogin: async () => ({ state: await bridge.beginQrLogin() }),
+      cancelQrLogin: async () => ({ state: await bridge.cancelQrLogin() }),
       submitCode: async (params) => ({ state: await bridge.submitCode(asRecord(params).code) }),
       submitPassword: async (params) => ({ state: await bridge.submitPassword(asRecord(params).password) }),
       logout: async () => {
