@@ -49,6 +49,8 @@ Disable or delete the old `тг ответ` command in Astra. Import the updated
 
 Replies and new messages use different tools. A short reply accidentally routed into the draft tool is handled as a reply to the latest incoming, without creating a draft. If that request needs more context, the tool redirects Astra to `reply_to_telegram` instead of asking for send confirmation. Tool discovery and whether the model calls a tool are controlled by Astra; the plugin cannot intercept an ordinary model answer when no tool is called.
 
+All model-facing tool and parameter instructions are in English, with Russian utterance examples and configurable phrase hints. They specify the lookup/reply/draft flows and Astra's wrapper format: the tool ID belongs in `tool_call.id`, while `tool_call.arguments` contains only fields from the selected tool's schema. For contacts, use `{}` or `{"offset":0}`. Schema errors and permission denials must be reported accurately; they do not indicate a Telegram connection failure. User-facing replies and dictated messages keep their original language.
+
 ## Development
 
 Requirements: Node.js 20+ and the `astra-plugin` CLI.

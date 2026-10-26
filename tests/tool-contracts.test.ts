@@ -20,7 +20,11 @@ test("plugin exposes separate tools for preparing and confirming a broadcast", a
   assert.ok(names.includes("reply_to_telegram"));
 
   await harness.assertSchemaAccepts("get_telegram_contacts", { offset: 100 });
+  await harness.assertSchemaAccepts("get_telegram_contacts", {});
   await harness.assertSchemaRejects("get_telegram_contacts", { offset: -1 });
+  await harness.assertSchemaRejects("get_telegram_contacts", { id: "plugin:dwertyfa-astra-tg:plugin__dwertyfa_astra_tg__get_telegram_contacts" });
+  await harness.assertSchemaRejects("get_telegram_contacts", { request_text: "напиши моему 2 акку привет" });
+  await harness.assertSchemaAccepts("get_telegram_reply_context", {});
   await harness.assertSchemaAccepts("reply_to_telegram", { incoming_id: "incoming", message: "Привет" });
   await harness.assertSchemaAccepts("reply_to_telegram", { message: "Привет" });
   await harness.assertSchemaRejects("reply_to_telegram", {});
@@ -34,17 +38,17 @@ test("plugin exposes separate tools for preparing and confirming a broadcast", a
   await harness.shutdown();
 });
 
-test("release metadata agrees on version 0.1.22", () => {
+test("release metadata agrees on version 0.1.23", () => {
   const root = join(import.meta.dirname, "..");
   const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   const packageLock = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8"));
   const manifest = readFileSync(join(root, "plugin.toml"), "utf8");
   const manifestVersion = /^version\s*=\s*"([^"]+)"/mu.exec(manifest)?.[1];
 
-  assert.equal(packageJson.version, "0.1.22");
-  assert.equal(packageLock.version, "0.1.22");
-  assert.equal(packageLock.packages[""].version, "0.1.22");
-  assert.equal(manifestVersion, "0.1.22");
+  assert.equal(packageJson.version, "0.1.23");
+  assert.equal(packageLock.version, "0.1.23");
+  assert.equal(packageLock.packages[""].version, "0.1.23");
+  assert.equal(manifestVersion, "0.1.23");
 });
 
 test("manifest requests Astra chat access for ambiguous saved auto-replies", () => {

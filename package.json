@@ -1,6 +1,6 @@
 {
   "name": "dwertyfa-astra-tg",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "description": "Connects by phone number or QR code. Reads messages from selected Telegram chats with Astra's voice and plays voice messages. Lets you reply and message contacts by voice, find recipients by name, send one message to several chats or a Telegram folder, and set up rule-based auto-replies. Announcement templates and reply phrases are customizable. Works without a VPN through the built-in proxy.",
   "main": "dist/index.js",
   "scripts": {

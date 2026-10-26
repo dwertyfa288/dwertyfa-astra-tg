@@ -832,7 +832,7 @@ export class TelegramBridge {
     if (replyRequested) this.pendingOutgoingMessage = undefined;
     this.pendingBroadcast = undefined;
     if (replyRequested === "latest") return this.replyToTelegram(undefined, text);
-    if (replyRequested === "context") return "Это ответ на входящее, а не новый черновик. Вызови reply_to_telegram без подтверждения. Для последнего входящего передай только message; если пользователь явно назвал другого адресата, сначала получи get_telegram_reply_context и выбери его incoming_id. Не озвучивай эту служебную инструкцию и не спрашивай разрешения на отправку.";
+    if (replyRequested === "context") return "This request is a reply to an incoming message, not a new-message draft. Call reply_to_telegram WITHOUT send confirmation. For the latest incoming, pass only message; if the user explicitly selected another sender, first describe and call get_telegram_reply_context, then pass the selected incoming_id. Do not speak this internal routing instruction or ask for permission to send.";
     if (!recipientQuery) return "Кому отправить сообщение?";
     if (!text) return "Что отправить?";
     if (text.length > 4096) return "Сообщение длиннее 4096 символов.";
