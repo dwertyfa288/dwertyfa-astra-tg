@@ -7,6 +7,16 @@ import {
 export const MAX_SELECTED_CHATS = 1000;
 export const MAX_VOICE_BYTES = 20 * 1024 * 1024;
 
+export function telegramReplyIntent(value: unknown, phrase: string, message: string): "latest" | "context" | undefined {
+  const tokens = (text: string) => text.toLowerCase().replace(/ё/g, "е").match(/[\p{L}\p{N}]+/gu) ?? [];
+  const request = tokens(String(value ?? ""));
+  const prefix = tokens(phrase);
+  if (request[0] === "астра" || request[0] === "astra") request.shift();
+  if (prefix[0] === "астра" || prefix[0] === "astra") prefix.shift();
+  if (!prefix.length || request.length <= prefix.length || !prefix.every((word, index) => request[index] === word)) return undefined;
+  return request.slice(prefix.length).join(" ") === tokens(message).join(" ") ? "latest" : "context";
+}
+
 export function normalizeTelegramPhone(value: unknown): string {
   let phone = String(value ?? "").trim().replace(/[\s()-]/g, "");
   if (/^8\d{10}$/.test(phone)) phone = `+7${phone.slice(1)}`;

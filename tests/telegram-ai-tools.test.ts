@@ -68,6 +68,75 @@ test("quick reply sends immediately to the selected incoming message and cannot 
   assert.equal(sent.length, 1);
 });
 
+test("a short reply needs only its text and targets the latest incoming", async () => {
+  const { bridge, sent, incoming } = setup();
+  await incoming(1, "Первое");
+  await incoming(2, "Как дела?");
+  assert.equal(await bridge.replyToTelegram(undefined, "Да заебись, у тебя как?"), "");
+  assert.deepEqual(sent, [{ id: "2", message: "Да заебись, у тебя как?" }]);
+});
+
+test("a reply routed into the draft tool sends immediately without a confirmation draft", async () => {
+  const { bridge, sent, incoming } = setup();
+  await incoming(2, "Как дела?");
+  const result = await bridge.prepareOutgoingMessage("астра ответь да заебись у тебя как", "2", "да заебись у тебя как");
+  assert.equal(result, "");
+  assert.deepEqual(sent, [{ id: "2", message: "да заебись у тебя как" }]);
+  assert.equal(bridge.pendingOutgoingMessage, undefined);
+  await bridge.confirmOutgoingMessage(true);
+  assert.equal(sent.length, 1);
+});
+
+test("misrouted replies respect the configured reply phrase", async () => {
+  const { bridge, sent, incoming } = setup();
+  bridge.state.preferences.replyCommandPhrase = "передай в ответ";
+  await incoming(1, "Когда?");
+  await bridge.prepareOutgoingMessage("Астра, передай в ответ: скоро буду", "1", "скоро буду");
+  assert.deepEqual(sent, [{ id: "1", message: "скоро буду" }]);
+});
+
+test("misrouted replies never create a draft or send to a contact without an incoming", async () => {
+  const { bridge, sent, incoming } = setup();
+  await incoming(1, "Привет");
+  const result = await bridge.prepareOutgoingMessage("ответь Эндрю Джонсу привет", "2", "привет");
+  assert.ok(result.length > 0);
+  assert.equal(bridge.pendingOutgoingMessage, undefined);
+  assert.equal(sent.length, 0);
+});
+
+test("a bare reply ignores a stale recipient guessed by the draft tool", async () => {
+  const { bridge, sent, incoming } = setup();
+  await incoming(1, "Старое");
+  await incoming(2, "Как дела?");
+  await bridge.prepareOutgoingMessage("Астра, ответь: отлично!", "1", "отлично");
+  assert.deepEqual(sent, [{ id: "2", message: "отлично" }]);
+});
+
+test("polite reply phrasing cannot send to a stale guessed contact", async () => {
+  const { bridge, sent, incoming } = setup();
+  await incoming(1, "Старое");
+  await incoming(2, "Как дела?");
+  await bridge.prepareOutgoingMessage("Астра, ответь пожалуйста: привет", "1", "привет");
+  assert.equal(sent.some((item) => item.id === "1"), false);
+  assert.equal(bridge.pendingOutgoingMessage, undefined);
+});
+
+test("a reply phrase can include the Astra wake word", async () => {
+  const { bridge, sent, incoming } = setup();
+  bridge.state.preferences.replyCommandPhrase = "Астра ответь";
+  await incoming(2, "Привет");
+  await bridge.prepareOutgoingMessage("Астра, ответь: привет", "2", "привет");
+  assert.deepEqual(sent, [{ id: "2", message: "привет" }]);
+});
+
+test("new outgoing messages mentioning the reply phrase still need confirmation", async () => {
+  const { bridge, sent, incoming } = setup();
+  await incoming(1, "Привет");
+  const result = await bridge.prepareOutgoingMessage("Напиши Эндрю: ответь когда сможешь", "1", "ответь когда сможешь");
+  assert.match(result, /Отправить/);
+  assert.equal(sent.length, 0);
+});
+
 test("expired or invented reply IDs and empty messages never send", async () => {
   const { bridge, sent, incoming } = setup();
   await incoming(1, "Привет");

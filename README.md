@@ -14,7 +14,7 @@ Reads messages from selected Telegram chats with Astra's voice and plays voice m
 - Customizable notification and reply-confirmation messages.
 - Playback of Telegram voice messages in their original audio.
 - All Telegram connections use the configured authenticated WSS relay, including login, reconnections and media downloads. The plugin never tries a direct Telegram connection.
-- Immediate replies to incoming messages through an AI tool, for example `Astra, tell him I will be there soon`. No separate reply command or send confirmation is needed. The reply phrase and reply window are configurable in the plugin.
+- Immediate replies to incoming messages through an AI tool, for example `Astra, reply: I will be there soon`. A short reply uses the latest incoming automatically; a reply to another sender can use its individual incoming ID. No separate reply command or send confirmation is needed. The reply phrase and reply window are configurable in the plugin.
 - AI chooses recipients from real Telegram contacts, using names and usernames to interpret inflections, nicknames, Russian/English spellings and speech recognition errors. Ambiguous recipients are clarified; selected chats are addressed by ID.
 - Recent incoming messages have individual reply IDs, so another incoming message cannot redirect a reply that is already being sent.
 - New Telegram messages through Astra AI tools: say, for example, `Astra, write to Andrey that I will be there soon`; Astra shows the resolved chat and draft first, then sends only after a separate confirmation.
@@ -40,12 +40,14 @@ Neural selection between several matching auto-reply rules uses Astra's `send_ch
 2. In **Команды Astra**, prepare and import the command file, then enable the single **тг** command.
 3. To set it up manually, create **тг** and connect these nodes: **Новое сообщение Telegram → Произнести → Проиграть голосовое Telegram**. Set the spoken text to `{announcement}` and use the voice from Astra settings.
 4. Configure announcement templates, the reply phrase and the reply window in **Озвучивание и быстрый ответ** below the command instructions.
-5. Ask Astra to reply to an incoming message, for example **«Ответь ему, что буду через час»**. It uses an AI tool and sends immediately without confirmation. No reply command or text trigger is required.
+5. Ask Astra to reply to an incoming message, for example **«Астра, ответь: буду через час»**. The `reply_to_telegram` AI tool needs only the reply text for the latest incoming. It sends immediately without confirmation. For a different sender, Astra obtains the incoming context and selects that message. No reply command or text trigger is required.
 6. For a new message, say **«Напиши Андрюхе, что скоро буду»**. AI chooses from actual Telegram contacts and clarifies ambiguous names. New messages and broadcasts still require draft confirmation.
 
 ## Updating from command-based replies
 
 Disable or delete the old `тг ответ` command in Astra. Import the updated command file if needed; it contains only `тг` for announcements and voice playback. Replying, sending new messages and broadcasts use AI tools. Ordinary speech is never automatically captured as reply text.
+
+Replies and new messages use different tools. A short reply accidentally routed into the draft tool is handled as a reply to the latest incoming, without creating a draft. If that request needs more context, the tool redirects Astra to `reply_to_telegram` instead of asking for send confirmation. Tool discovery and whether the model calls a tool are controlled by Astra; the plugin cannot intercept an ordinary model answer when no tool is called.
 
 ## Development
 

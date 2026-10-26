@@ -35,6 +35,7 @@ import {
   applyTemplate,
   type ChatInfo,
   defaultState,
+  telegramReplyIntent,
   MAX_SELECTED_CHATS,
   MAX_VOICE_BYTES,
   normalizeTelegramPhone,
@@ -311,20 +312,21 @@ export class TelegramBridge {
     };
   }
 
-  async replyToTelegram(id: string, message: string): Promise<string> {
+  async replyToTelegram(id: string | undefined, message: string): Promise<string> {
     this.cleanupExpired();
-    const pending = this.replyContexts.get(id);
+    const pending = id === undefined ? this.pendingReply : this.replyContexts.get(id);
     if (!pending) return "Сообщение для ответа недоступно или окно ответа истекло. Обновите контекст Telegram.";
     const text = message.trim();
     if (!text) return "Что ответить?";
     if (text.length > 4096) return "Сообщение длиннее 4096 символов.";
-    if (this.repliesInProgress.has(id)) return "Этот ответ уже отправляется.";
-    this.repliesInProgress.add(id);
+    if (this.repliesInProgress.has(pending.id)) return "Этот ответ уже отправляется.";
+    this.pendingOutgoingMessage = undefined;
+    this.repliesInProgress.add(pending.id);
     try {
       await this.sendReply(text, pending);
       return "";
     } finally {
-      this.repliesInProgress.delete(id);
+      this.repliesInProgress.delete(pending.id);
     }
   }
 
@@ -819,20 +821,18 @@ export class TelegramBridge {
     };
   }
 
-  /**
-   * Resolve an explicitly requested Telegram recipient and create a short-lived
-   * draft. This method never sends: the second tool must receive a separate,
-   * explicit confirmation from the user before `confirmOutgoingMessage` can do
-   * any Telegram write.
-   */
   async prepareOutgoingMessage(
-    _requestValue: unknown,
+    requestValue: unknown,
     recipientValue: unknown,
     messageValue: unknown,
   ): Promise<string> {
     const recipientQuery = String(recipientValue ?? "").trim();
     const text = String(messageValue ?? "").trim();
+    const replyRequested = telegramReplyIntent(requestValue, this.replyCommandPhrase(), text);
+    if (replyRequested) this.pendingOutgoingMessage = undefined;
     this.pendingBroadcast = undefined;
+    if (replyRequested === "latest") return this.replyToTelegram(undefined, text);
+    if (replyRequested === "context") return "Это ответ на входящее, а не новый черновик. Вызови reply_to_telegram без подтверждения. Для последнего входящего передай только message; если пользователь явно назвал другого адресата, сначала получи get_telegram_reply_context и выбери его incoming_id. Не озвучивай эту служебную инструкцию и не спрашивай разрешения на отправку.";
     if (!recipientQuery) return "Кому отправить сообщение?";
     if (!text) return "Что отправить?";
     if (text.length > 4096) return "Сообщение длиннее 4096 символов.";
