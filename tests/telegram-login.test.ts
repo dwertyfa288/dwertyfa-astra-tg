@@ -197,12 +197,13 @@ test("FLOOD_WAIT from Telegram enforces its retry delay", async () => {
   await bridge.stop();
 });
 
-test("QR login displays an image and authorizes without requesting a phone code", async () => {
+test("QR login displays an image and authorizes a foreign account without a phone input", async () => {
   const { bridge, client, requests, logs } = setup();
   assert.equal(typeof bridge.beginQrLogin, "function");
   let approve!: () => void;
   const approved = new Promise<void>((resolve) => { approve = resolve; });
-  (client as any).getMe = async () => ({ firstName: "QR Test", phone: "79991234567" });
+  bridge.state.phone = "+79991234567";
+  (client as any).getMe = async () => ({ firstName: "QR Test", phone: "12025550123" });
   (client as any).signInUserWithQrCode = async (_credentials: any, options: any) => {
     await options.qrCode({ token: Buffer.from("private-qr-token"), expires: Math.floor(Date.now() / 1000) + 30 });
     await approved;
@@ -214,10 +215,27 @@ test("QR login displays an image and authorizes without requesting a phone code"
   assert.equal(bridge.publicState().connected, false);
   approve();
   await until(() => bridge.publicState().connected);
-  assert.equal(bridge.publicState().phone, "+79991234567");
+  assert.equal(bridge.publicState().phone, "+12025550123");
   assert.equal(bridge.publicState().qrLogin, null);
   assert.equal(requests.some((request) => request instanceof Api.auth.SendCode), false);
   assert.equal(logs.some((line) => line.includes("private-qr-token") || line.includes("tg://login")), false);
+});
+
+test("international phone login preserves the country code through send, resend and sign-in", async () => {
+  for (const [input, expected] of [["+1 (202) 555-0123", "+12025550123"], ["0084 90 123 45 67", "+84901234567"], ["+91 98765 43210", "+919876543210"]]) {
+    const { bridge, requests } = setup();
+    await bridge.beginLogin(input);
+    await until(() => bridge.publicState().authStage === "awaiting_code");
+    bridge.loginCode.resendAvailableAt = Date.now() - 1;
+    await bridge.resendLoginCode();
+    bridge.submitCode("12345");
+    await until(() => bridge.publicState().connected);
+    const authRequests = requests.filter((request) => request instanceof Api.auth.SendCode || request instanceof Api.auth.ResendCode || request instanceof Api.auth.SignIn);
+    assert.equal(authRequests.length, 3);
+    assert.ok(authRequests.every((request) => request.phoneNumber === expected));
+    assert.equal(bridge.publicState().phone, expected);
+    await bridge.stop();
+  }
 });
 
 test("cancelled QR callbacks cannot restore a stale QR or authorize", async () => {

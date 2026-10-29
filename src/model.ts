@@ -18,11 +18,12 @@ export function telegramReplyIntent(value: unknown, phrase: string, message: str
 }
 
 export function normalizeTelegramPhone(value: unknown): string {
-  let phone = String(value ?? "").trim().replace(/[\s()-]/g, "");
-  if (/^8\d{10}$/.test(phone)) phone = `+7${phone.slice(1)}`;
+  let phone = String(value ?? "").trim().replace(/[\s().-]/g, "");
+  if (phone.startsWith("00")) phone = `+${phone.slice(2)}`;
+  else if (/^8\d{10}$/.test(phone)) phone = `+7${phone.slice(1)}`;
   else if (/^7\d{10}$/.test(phone)) phone = `+${phone}`;
-  if (!/^\+\d{7,15}$/.test(phone)) {
-    throw new Error("Укажите номер в формате +79991234567 или 89991234567. Пробелы, скобки и дефисы допустимы.");
+  if (!/^\+[1-9]\d{6,14}$/.test(phone)) {
+    throw new Error("Укажите международный номер: +код страны и номер, например +1 202 555 0123 или +44 7911 123456. Вместо + допустимо 00. Пробелы, скобки, дефисы и точки допустимы. Для номеров +7 также можно начать с 8.");
   }
   return phone;
 }

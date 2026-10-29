@@ -4,8 +4,8 @@ Reads messages from selected Telegram chats with Astra's voice and plays voice m
 
 ## Features
 
-- QR login through the official Telegram app on your phone, without waiting for a login code. QR codes refresh automatically and 2FA passwords remain supported.
-- Login with a phone number, Telegram verification code, and two-step verification password. Russian numbers may start with +7, 7 or 8; spaces, parentheses and hyphens are accepted and normalized automatically.
+- QR login through the official Telegram app on your phone, without entering a phone number or waiting for a login code. Select the intended account on your phone before scanning; there is no country-code restriction. QR codes refresh automatically and 2FA passwords remain supported.
+- Login with an international phone number, Telegram verification code, and two-step verification password. Use `+` followed by the country code and number, such as `+1`, `+44`, `+49`, `+380`, `+91` or any other country code; `00` can replace `+`. Spaces, parentheses, hyphens and dots are accepted. Numbers in the +7 numbering plan may also start with domestic 8 or bare 7. For other international numbers, use an explicit `+` or `00` to avoid ambiguity.
 - Support for private chats, groups, and channels.
 - Monitoring of up to 1000 chats at the same time, with a one-click "monitor every chat" action.
 - A privacy toggle that masks the account name and phone number; the state is kept in the plugin's own state file.
